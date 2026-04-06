@@ -1,0 +1,32 @@
+* text=auto eol=lf
+
+*.cs text diff=csharp
+*.shader text
+*.cginc text
+*.compute text
+*.hlsl text
+*.json text
+*.md text
+*.meta text
+*.unity text
+*.prefab text
+*.mat text
+*.anim text
+*.controller text
+*.asset text
+*.asmdef text
+*.asmref text
+*.inputactions text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.tga binary
+*.psd binary
+*.fbx binary
+*.blend binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.mp4 binary
+*.mov binary
