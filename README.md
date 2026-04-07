@@ -2,21 +2,53 @@
 
 ## Sprint 2 - Tree Felling
 
+Спринт 2 завершил внедрение системы рубки деревьев как отдельного игрового модуля. В проект был добавлен полный цикл взаимодействия: поиск дерева, нанесение ударов, накопление повреждений, падение ствола, спавн брёвен и визуальная обратная связь через decal-систему.
+
 ### Добавлено
-- Система рубки деревьев с накоплением ударов и выбором направления падения.
-- `ChoppableTree`, `ChopInteraction`, `TreeFallSystem`, `TreeDecalSystem`, `LogPickup`.
-- Умное обнаружение ближайшего дерева в поле зрения через `TreeTargetDetector` без Raycast для поиска целей.
-- Конфиги `TreeConfig`, `TreeFallConfig`, `TreeTargetingConfig`.
-- VContainer scope для модуля рубки деревьев: `TreeFellingLifetimeScope`.
-- Адаптеры для инвентаря и carry anchor: `InventoryQueryAdapter`, `InventoryWriteAdapter`, `PlayerCarryAnchorAdapter`.
-- Новые prefab-ресурсы для дерева, бревна, веток и decal.
-- Debug-логи и gizmos для диагностики выбора дерева и цепочки взаимодействия.
+- Модуль рубки деревьев с основными runtime-классами: `ChoppableTree`, `ChopInteraction`, `TreeFallSystem`, `TreeDecalSystem`, `LogPickup`, `PlayerTreeInteractor`.
+- Умный поиск ближайшего дерева в поле зрения игрока через `TreeTargetDetector` с периодическим сканированием без постоянного `Raycast`.
+- Конфиги `TreeConfig`, `TreeFallConfig`, `TreeTargetingConfig` для урона, падения, спавна брёвен, веток и параметров выбора цели.
+- Отдельный `TreeFellingLifetimeScope` для регистрации зависимостей через `VContainer`.
+- Пуллинг объектов через `ObjectPool<T>` для брёвен, веток и decal-элементов.
+- Адаптеры инвентаря и carry-anchor: `InventoryQueryAdapter`, `InventoryWriteAdapter`, `PlayerCarryAnchorAdapter`.
+- Новые игровые сообщения и события для ударов, падения дерева, звука и частиц.
+- Префабы дерева, брёвен, веток и decal-ресурсы для сцены.
 
 ### Изменено
-- `PlayerInstaller` расширен для подключения `TreeTargetDetector` и `PlayerTreeInteractor`.
-- `SampleScene` обновлена для Sprint 2: добавлены scope, конфиги, префабы и связи для рубки деревьев.
-- Input и scene setup обновлены под взаимодействие `E` / `LMB` с деревьями.
-- Настройка слоёв обновлена для отдельного слоя деревьев.
+- `PlayerInstaller` расширен регистрацией `TreeTargetDetector` и `PlayerTreeInteractor`.
+- Игрок получил полноценную цепочку интеракции с деревьями через существующий input flow.
+- `SampleScene` обновлена под сценовый setup Sprint 2: добавлены префабы, конфиги, scope и runtime-ссылки.
+- Слои и scene setup были подготовлены для отдельной обработки деревьев и взаимодействуемых объектов модуля.
+- Инвентарь игрока был связан с системой подбора брёвен и переносом ресурсов после падения дерева.
 
 ### Удалено
-- Удалений игровых систем в Sprint 2 не производилось.
+- Отдельных игровых систем в рамках Sprint 2 удалено не было.
+- Устаревший ручной сценарий тестирования рубки без DI и без сцепки с инвентарём больше не используется как целевой pipeline.
+
+## Sprint 3 - Campfire System
+
+Спринт 3 завершил внедрение трёхуровневой системы костра как центральной механики выживания. Костёр переведён в отдельный gameplay-модуль с runtime-state через `ScriptableObject`, асинхронным расходом топлива на `UniTask`, защитной зоной, управлением светом, точкой сохранения и расширенной интеграцией с инвентарём.
+
+### Добавлено
+- `CampfireState` как runtime `ScriptableObject` со статусом костра, текущим уровнем, топливом, радиусами защиты и света.
+- `CampfireSystem` с асинхронным циклом сгорания топлива на `UniTask` без `Coroutine` и без `Update`.
+- `CampfireProtectionZone` с проверкой safe-zone через `Physics.OverlapSphereNonAlloc` каждые `0.5` секунды.
+- `CampfireLightController` для flicker-логики, dying-состояния и плавного затухания света после тушения.
+- `CampfireSavePoint` с поддержкой сохранения, sleep-запроса и выбора костра как активной точки возрождения.
+- `CampfireInteraction` для добавления топлива, длительного удержания взаимодействия и поджигания через источник огня.
+- `CampfireLifetimeScope` для подключения модуля костра через `VContainer` и регистрации `MessagePipe`-событий.
+- Новые события модуля: `FuelChangedEvent`, `CampfireLitEvent`, `CampfireDyingEvent`, `CampfireExtinguishedEvent`, `CampfireLevelUpEvent`, `PlayerInSafeZoneEvent`, `GhostInLightEvent`, `SleepRequestEvent`.
+- Трёхуровневая конфигурация костра через `CampfireConfig` и `CampfireLevelData`.
+
+### Изменено
+- `ICampfireService` расширен до полноценного runtime-контракта с доступом к состоянию, уровням, радиусам, топливу, поджигу, тушению и улучшению костра.
+- `CampfireConfig` переработан из упрощённого одноуровневого конфига в конфиг прогрессии с несколькими уровнями костра и погодными множителями расхода топлива.
+- `InventoryQueryAdapter` расширен поддержкой источников огня: `Flint` и `Firesteel`.
+- `InventoryWriteAdapter` расширен поддержкой расходования брёвен на пополнение топлива костра.
+- Система призраков продолжает использовать `ICampfireService`, но теперь получает более точные runtime-данные по радиусу защиты и состоянию костра.
+- Сценовый setup и данные проекта были подготовлены под добавление campfire-ассетов, конфигов и новых компонентов сцены.
+
+### Удалено
+- Упрощённая версия костра с фиксированным радиусом защиты, одной моделью топлива и `ITickable`-обновлением больше не используется как основная реализация.
+- Старые поля конфига костра уровня `StartFuelSeconds`, `MaxFuelSeconds`, `FuelConsumptionPerSecond`, `MinLightIntensity` и `MaxLightIntensity` были заменены новой tier-based конфигурацией.
+- Прежняя модель костра как только источника света без save-point и без interaction-слоя исключена из текущей архитектуры модуля.
