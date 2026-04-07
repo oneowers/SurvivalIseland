@@ -20,8 +20,8 @@ MonoBehaviour:
   _maxZoomDistance: 6
   _zoomSensitivity: 0.1
   _shoulderOffset: {x: 0.55, y: 0.2, z: 0}
-  _yawSensitivity: 0.12
-  _pitchSensitivity: 0.1
+  _yawSensitivity: 0.35
+  _pitchSensitivity: 0.3
   _minPitch: -30
   _maxPitch: 70
   _cameraLag: 0.1

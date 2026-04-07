@@ -7,6 +7,7 @@ using MessagePipe;
 using ProjectResonance.PlayerInput;
 using ProjectResonance.PlayerMovement;
 using ProjectResonance.PlayerWeight;
+using ProjectResonance.TreeFelling;
 using ProjectResonance.ThirdPersonCamera;
 using UnityEngine;
 using VContainer;
@@ -32,6 +33,12 @@ namespace ProjectResonance.PlayerInstaller
         [SerializeField]
         private PlayerCameraTarget _cameraTarget;
 
+        [SerializeField]
+        private TreeTargetDetector _treeTargetDetector;
+
+        [SerializeField]
+        private PlayerTreeInteractor _playerTreeInteractor;
+
         [Header("Configs")]
         [SerializeField]
         private PlayerMovementConfig _playerMovementConfig;
@@ -52,6 +59,14 @@ namespace ProjectResonance.PlayerInstaller
             builder.RegisterComponent(_characterController);
             builder.RegisterComponent(_playerCamera);
             builder.RegisterComponent(_cameraTarget);
+            if (_treeTargetDetector != null)
+            {
+                builder.RegisterComponent(_treeTargetDetector);
+            }
+            if (_playerTreeInteractor != null)
+            {
+                builder.RegisterComponent(_playerTreeInteractor);
+            }
 
             builder.RegisterInstance(_playerMovementConfig);
             builder.RegisterInstance(_cameraConfig);
@@ -71,9 +86,25 @@ namespace ProjectResonance.PlayerInstaller
                 container.InjectGameObject(_characterController.gameObject);
                 container.InjectGameObject(_playerCamera.gameObject);
                 container.InjectGameObject(_cameraTarget.gameObject);
+                if (_treeTargetDetector != null)
+                {
+                    container.InjectGameObject(_treeTargetDetector.gameObject);
+                }
+                if (_playerTreeInteractor != null)
+                {
+                    container.InjectGameObject(_playerTreeInteractor.gameObject);
+                }
 
                 _playerWeightState.Initialize(container.Resolve<IBufferedPublisher<WeightChangedEvent>>());
                 _playerInputHandler.Initialize();
+                if (_treeTargetDetector != null)
+                {
+                    _treeTargetDetector.Initialize();
+                }
+                if (_playerTreeInteractor != null)
+                {
+                    _playerTreeInteractor.Initialize();
+                }
             });
         }
 
