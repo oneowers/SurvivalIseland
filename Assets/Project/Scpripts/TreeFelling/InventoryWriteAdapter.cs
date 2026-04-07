@@ -1,7 +1,8 @@
 // Path: Assets/Project/Scpripts/TreeFelling/InventoryWriteAdapter.cs
-// Purpose: Provides a simple editor-driven inventory write adapter for collected logs.
-// Dependencies: UnityEngine, TreeFelling.
+// Purpose: Provides a simple editor-driven inventory write adapter for collected logs and campfire consumption.
+// Dependencies: UnityEngine, TreeFelling, Campfire.
 
+using ProjectResonance.Campfire;
 using UnityEngine;
 
 namespace ProjectResonance.TreeFelling
@@ -11,7 +12,7 @@ namespace ProjectResonance.TreeFelling
     /// </summary>
     [AddComponentMenu("Project Resonance/Tree Felling/Inventory Write Adapter")]
     [DisallowMultipleComponent]
-    public sealed class InventoryWriteAdapter : MonoBehaviour, IInventoryWriteService
+    public sealed class InventoryWriteAdapter : MonoBehaviour, IInventoryWriteService, ICampfireInventoryWriteService
     {
         [SerializeField]
         [Min(0)]
@@ -59,6 +60,22 @@ namespace ProjectResonance.TreeFelling
             }
 
             _currentLogs = Mathf.Max(0, _currentLogs - amount);
+        }
+
+        /// <summary>
+        /// Attempts to consume logs from the local runtime inventory.
+        /// </summary>
+        /// <param name="amount">Number of logs to consume.</param>
+        /// <returns>True when enough logs were available.</returns>
+        public bool TryConsumeLog(int amount)
+        {
+            if (amount <= 0 || _currentLogs < amount)
+            {
+                return false;
+            }
+
+            _currentLogs -= amount;
+            return true;
         }
 
         /// <summary>

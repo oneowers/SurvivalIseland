@@ -1,24 +1,32 @@
 // Path: Assets/Project/Scpripts/DayNight/IDayNightService.cs
-// Purpose: Exposes the current global day and night state.
-// Dependencies: ProjectResonance.Common.Messages.
-
-using ProjectResonance.Common.Messages;
+// Purpose: Exposes the runtime day and night clock for gameplay systems.
+// Dependencies: ProjectResonance.DayNight.
 
 namespace ProjectResonance.DayNight
 {
     /// <summary>
-    /// Provides access to the runtime day and night state.
+    /// Provides access to the runtime day and night clock state.
     /// </summary>
     public interface IDayNightService
     {
         /// <summary>
         /// Gets the current normalized cycle time in the range [0..1].
         /// </summary>
-        float NormalizedTime { get; }
+        float CurrentTimeNormalized { get; }
 
         /// <summary>
-        /// Gets the current global day phase.
+        /// Gets the configured real-time duration of one in-game day.
         /// </summary>
-        DayPhase CurrentPhase { get; }
+        float GameDayDuration { get; }
+
+        /// <summary>
+        /// Gets the current time-of-day phase.
+        /// </summary>
+        TimeOfDay CurrentTimeOfDay { get; }
+
+        /// <summary>
+        /// Skips the clock directly to the next morning.
+        /// </summary>
+        void SkipToMorning();
     }
 }

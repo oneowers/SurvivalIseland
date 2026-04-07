@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 79fe53dcf23d74aca8d28e557c58b27f, type: 3}
+  m_Name: CampfireConfig
+  m_EditorClassIdentifier: 
+  _levels:
+  - _level: 1
+    _protectionRadius: 8
+    _fuelCapacity: 180
+    _burnRate: 1
+    _lightRadius: 10
+  - _level: 2
+    _protectionRadius: 12
+    _fuelCapacity: 300
+    _burnRate: 0.85
+    _lightRadius: 14
+  - _level: 3
+    _protectionRadius: 16
+    _fuelCapacity: 420
+    _burnRate: 0.7
+    _lightRadius: 18
+  _dyingThreshold: 0.2
+  _warningBeforeExtinguish: 30
+  _rainBurnMultiplier: 2
+  _windBurnMultiplier: 1.5
+  _fuelPerLog: 45

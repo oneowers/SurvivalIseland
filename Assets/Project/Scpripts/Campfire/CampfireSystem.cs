@@ -1,109 +1,346 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireSystem.cs
-// Purpose: Owns campfire fuel state, visuals and protection radius.
-// Dependencies: CampfireConfig, CampfireAnchor, MessagePipe, UnityEngine, VContainer.
+// Purpose: Owns fuel burn, ignition, extinguish warning and level progression for the campfire.
+// Dependencies: UniTask, CampfireConfig, CampfireState, CampfireAnchor, VContainer.
 
+using System;
+using System.Threading;
+using Cysharp.Threading.Tasks;
 using MessagePipe;
-using ProjectResonance.Common.Messages;
 using UnityEngine;
 using VContainer.Unity;
 
 namespace ProjectResonance.Campfire
 {
     /// <summary>
-    /// Stores and updates the runtime campfire state.
+    /// Exposes weather state needed by the campfire burn calculation.
     /// </summary>
-    public sealed class CampfireSystem : ICampfireService, IStartable, ITickable
+    public interface ICampfireWeatherService
     {
-        private readonly CampfireConfig _config;
-        private readonly CampfireAnchor _anchor;
-        private readonly IBufferedPublisher<CampfireStateChangedMessage> _stateChangedPublisher;
-
-        private float _fuelSeconds;
-        private bool _isLit;
+        /// <summary>
+        /// Gets whether rain is currently active.
+        /// </summary>
+        bool IsRaining { get; }
 
         /// <summary>
-        /// Initializes the campfire system.
+        /// Gets whether strong wind is currently active.
         /// </summary>
-        /// <param name="config">Campfire configuration.</param>
-        /// <param name="anchor">Scene anchor with visuals and transform.</param>
-        /// <param name="stateChangedPublisher">Buffered campfire state publisher.</param>
+        bool IsWindy { get; }
+    }
+
+    /// <summary>
+    /// Runtime system that owns the campfire lifecycle.
+    /// </summary>
+    public sealed class CampfireSystem : ICampfireService, IStartable, IDisposable
+    {
+        private readonly CampfireConfig _config;
+        private readonly CampfireState _state;
+        private readonly CampfireAnchor _anchor;
+        private readonly ICampfireWeatherService _weatherService;
+        private readonly IBufferedPublisher<FuelChangedEvent> _fuelChangedPublisher;
+        private readonly IPublisher<CampfireLitEvent> _campfireLitPublisher;
+        private readonly IPublisher<CampfireDyingEvent> _campfireDyingPublisher;
+        private readonly IPublisher<CampfireExtinguishedEvent> _campfireExtinguishedPublisher;
+        private readonly IPublisher<CampfireLevelUpEvent> _campfireLevelUpPublisher;
+
+        private CancellationTokenSource _burnLoopCancellation;
+        private CancellationTokenSource _extinguishWarningCancellation;
+
+        /// <summary>
+        /// Creates the runtime campfire system.
+        /// </summary>
+        /// <param name="config">Campfire configuration asset.</param>
+        /// <param name="state">Shared runtime state asset.</param>
+        /// <param name="anchor">Scene anchor for the campfire.</param>
+        /// <param name="fuelChangedPublisher">Buffered fuel publisher.</param>
+        /// <param name="campfireLitPublisher">Lit event publisher.</param>
+        /// <param name="campfireDyingPublisher">Dying event publisher.</param>
+        /// <param name="campfireExtinguishedPublisher">Extinguished event publisher.</param>
+        /// <param name="campfireLevelUpPublisher">Level-up event publisher.</param>
+        /// <param name="weatherService">Optional weather service used to scale burn rate.</param>
         public CampfireSystem(
             CampfireConfig config,
+            CampfireState state,
             CampfireAnchor anchor,
-            IBufferedPublisher<CampfireStateChangedMessage> stateChangedPublisher)
+            IBufferedPublisher<FuelChangedEvent> fuelChangedPublisher,
+            IPublisher<CampfireLitEvent> campfireLitPublisher,
+            IPublisher<CampfireDyingEvent> campfireDyingPublisher,
+            IPublisher<CampfireExtinguishedEvent> campfireExtinguishedPublisher,
+            IPublisher<CampfireLevelUpEvent> campfireLevelUpPublisher,
+            ICampfireWeatherService weatherService = null)
         {
             _config = config;
+            _state = state;
             _anchor = anchor;
-            _stateChangedPublisher = stateChangedPublisher;
-            _fuelSeconds = Mathf.Clamp(config.StartFuelSeconds, 0f, config.MaxFuelSeconds);
-            _isLit = _fuelSeconds > 0f;
+            _weatherService = weatherService;
+            _fuelChangedPublisher = fuelChangedPublisher;
+            _campfireLitPublisher = campfireLitPublisher;
+            _campfireDyingPublisher = campfireDyingPublisher;
+            _campfireExtinguishedPublisher = campfireExtinguishedPublisher;
+            _campfireLevelUpPublisher = campfireLevelUpPublisher;
+
+            _state.Initialize(
+                _config,
+                _fuelChangedPublisher,
+                _campfireLitPublisher,
+                _campfireDyingPublisher,
+                _campfireExtinguishedPublisher,
+                _campfireLevelUpPublisher);
         }
 
         /// <summary>
-        /// Gets whether the campfire is currently lit.
+        /// Gets the shared runtime state asset.
         /// </summary>
-        public bool IsLit => _isLit;
+        public CampfireState State => _state;
 
         /// <summary>
-        /// Gets the world position of the campfire.
+        /// Gets whether the campfire is lit.
+        /// </summary>
+        public bool IsLit => _state.IsLit;
+
+        /// <summary>
+        /// Gets whether the campfire is dying.
+        /// </summary>
+        public bool IsDying => _state.IsDying;
+
+        /// <summary>
+        /// Gets the current campfire level.
+        /// </summary>
+        public CampfireLevel Level => _state.Level;
+
+        /// <summary>
+        /// Gets the current world position of the campfire.
         /// </summary>
         public Vector3 Position => _anchor.FirePoint.position;
 
         /// <summary>
-        /// Gets the protection radius in world units.
+        /// Gets the current protection radius.
         /// </summary>
-        public float ProtectionRadius => _config.ProtectionRadius;
+        public float ProtectionRadius => _state.ProtectionRadius;
 
         /// <summary>
-        /// Publishes the initial campfire state when the container starts.
+        /// Gets the current light radius.
+        /// </summary>
+        public float LightRadius => _state.LightRadius;
+
+        /// <summary>
+        /// Gets the current fuel amount.
+        /// </summary>
+        public float CurrentFuel => _state.CurrentFuel;
+
+        /// <summary>
+        /// Gets the current maximum fuel capacity.
+        /// </summary>
+        public float MaxFuel => _state.MaxFuel;
+
+        /// <summary>
+        /// Starts the background burn loop.
         /// </summary>
         public void Start()
         {
-            PublishCurrentState();
+            _state.PublishSnapshot();
+
+            _burnLoopCancellation = new CancellationTokenSource();
+            RunBurnLoopAsync(_burnLoopCancellation.Token).Forget();
         }
 
         /// <summary>
-        /// Ticks the campfire fuel and visuals during the Unity player loop.
+        /// Stops all background tasks owned by the campfire system.
         /// </summary>
-        public void Tick()
+        public void Dispose()
         {
-            if (!_isLit || _config.FuelConsumptionPerSecond <= 0f)
+            CancelExtinguishWarning();
+
+            if (_burnLoopCancellation != null)
             {
-                return;
+                _burnLoopCancellation.Cancel();
+                _burnLoopCancellation.Dispose();
+                _burnLoopCancellation = null;
             }
-
-            _fuelSeconds = Mathf.Max(0f, _fuelSeconds - (_config.FuelConsumptionPerSecond * Time.deltaTime));
-            var nextIsLit = _fuelSeconds > 0f;
-
-            // Publishing every tick keeps visuals and late subscribers synchronized with the latest fuel value.
-            _isLit = nextIsLit;
-            PublishCurrentState();
         }
 
         /// <summary>
         /// Adds fuel to the campfire.
         /// </summary>
-        /// <param name="fuelSeconds">Fuel amount in seconds.</param>
-        public void AddFuel(float fuelSeconds)
+        /// <param name="amount">Fuel amount to add.</param>
+        public void AddFuel(float amount)
         {
-            if (fuelSeconds <= 0f)
+            if (amount <= 0f || _state.Level == CampfireLevel.None || _state.MaxFuel <= 0f)
             {
                 return;
             }
 
-            _fuelSeconds = Mathf.Clamp(_fuelSeconds + fuelSeconds, 0f, _config.MaxFuelSeconds);
-            _isLit = _fuelSeconds > 0f;
-            PublishCurrentState();
+            CancelExtinguishWarning();
+
+            // When fuel is restored during the warning window, the existing flame stays alive instead of forcing re-ignition.
+            var shouldRemainLit = _state.IsLit;
+            var nextFuel = Mathf.Clamp(_state.CurrentFuel + amount, 0f, _state.MaxFuel);
+            _state.ApplyRuntimeState(_state.Level, nextFuel, shouldRemainLit);
         }
 
-        private void PublishCurrentState()
+        /// <summary>
+        /// Attempts to ignite the campfire.
+        /// </summary>
+        /// <returns>True when ignition succeeded.</returns>
+        public bool Ignite()
         {
-            var normalizedFuel = _config.MaxFuelSeconds > 0f
-                ? Mathf.Clamp01(_fuelSeconds / _config.MaxFuelSeconds)
-                : 0f;
+            if (_state.Level == CampfireLevel.None || _state.IsLit || _state.CurrentFuel <= 0f)
+            {
+                return false;
+            }
 
-            _anchor.ApplyState(_isLit, normalizedFuel, _config.MinLightIntensity, _config.MaxLightIntensity);
-            _stateChangedPublisher.Publish(new CampfireStateChangedMessage(_isLit, _fuelSeconds, _config.MaxFuelSeconds, _config.ProtectionRadius));
+            CancelExtinguishWarning();
+            _state.ApplyRuntimeState(_state.Level, _state.CurrentFuel, true);
+            return true;
+        }
+
+        /// <summary>
+        /// Extinguishes the campfire immediately.
+        /// </summary>
+        public void Extinguish()
+        {
+            if (!_state.IsLit)
+            {
+                return;
+            }
+
+            CancelExtinguishWarning();
+            _state.ApplyRuntimeState(_state.Level, _state.CurrentFuel, false);
+        }
+
+        /// <summary>
+        /// Attempts to upgrade the campfire to the next available tier.
+        /// </summary>
+        /// <returns>True when the upgrade succeeded.</returns>
+        public bool TryUpgrade()
+        {
+            if (!_config.TryGetNextLevel(_state.Level, out var nextLevel))
+            {
+                return false;
+            }
+
+            var nextLevelData = _config.GetLevelData(nextLevel);
+            if (nextLevelData.FuelCapacity <= 0f)
+            {
+                return false;
+            }
+
+            var normalizedFuel = _state.CurrentFuelNormalized;
+            var nextFuel = Mathf.Clamp(normalizedFuel * nextLevelData.FuelCapacity, 0f, nextLevelData.FuelCapacity);
+
+            _state.ApplyRuntimeState(nextLevel, nextFuel, _state.IsLit && nextFuel > 0f);
+            return true;
+        }
+
+        private async UniTaskVoid RunBurnLoopAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    if (_state.IsLit)
+                    {
+                        TickFuelBurn(Time.deltaTime);
+                    }
+
+                    await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Container disposal stops the loop through cancellation.
+            }
+        }
+
+        private void TickFuelBurn(float deltaTime)
+        {
+            if (deltaTime <= 0f || _state.Level == CampfireLevel.None || _state.CurrentFuel <= 0f)
+            {
+                if (_state.IsLit && _state.CurrentFuel <= 0f)
+                {
+                    BeginExtinguishWarning();
+                }
+
+                return;
+            }
+
+            var burnRate = ResolveBurnRate();
+            if (burnRate <= 0f)
+            {
+                return;
+            }
+
+            var nextFuel = Mathf.Max(0f, _state.CurrentFuel - (burnRate * deltaTime));
+            _state.ApplyRuntimeState(_state.Level, nextFuel, true);
+
+            if (nextFuel <= 0f)
+            {
+                BeginExtinguishWarning();
+            }
+        }
+
+        private float ResolveBurnRate()
+        {
+            var burnRate = _config.GetLevelData(_state.Level).BurnRate;
+
+            if (_weatherService != null && _weatherService.IsRaining)
+            {
+                burnRate *= _config.RainBurnMultiplier;
+            }
+
+            if (_weatherService != null && _weatherService.IsWindy)
+            {
+                burnRate *= _config.WindBurnMultiplier;
+            }
+
+            return burnRate;
+        }
+
+        private void BeginExtinguishWarning()
+        {
+            if (_extinguishWarningCancellation != null || !_state.IsLit)
+            {
+                return;
+            }
+
+            _extinguishWarningCancellation = new CancellationTokenSource();
+            RunExtinguishWarningAsync(_extinguishWarningCancellation.Token).Forget();
+        }
+
+        private async UniTaskVoid RunExtinguishWarningAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await UniTask.Delay(
+                    TimeSpan.FromSeconds(_config.WarningBeforeExtinguish),
+                    DelayType.DeltaTime,
+                    PlayerLoopTiming.Update,
+                    cancellationToken);
+
+                _extinguishWarningCancellation?.Dispose();
+                _extinguishWarningCancellation = null;
+
+                if (_state.IsLit && _state.CurrentFuel <= 0f)
+                {
+                    _state.ApplyRuntimeState(_state.Level, 0f, false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _extinguishWarningCancellation?.Dispose();
+                _extinguishWarningCancellation = null;
+            }
+        }
+
+        private void CancelExtinguishWarning()
+        {
+            if (_extinguishWarningCancellation == null)
+            {
+                return;
+            }
+
+            _extinguishWarningCancellation.Cancel();
+            _extinguishWarningCancellation.Dispose();
+            _extinguishWarningCancellation = null;
         }
     }
 }

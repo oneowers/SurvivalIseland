@@ -1,5 +1,5 @@
 // Path: Assets/Project/Scpripts/Ghosts/GhostSpawnSystem.cs
-// Purpose: Spawns and recycles ghosts during the night cycle.
+// Purpose: Spawns and recycles ghosts during the active night phases.
 // Dependencies: UniTask, MessagePipe, GhostSpawnerConfig, ICampfireService, IDayNightService, IHealthService, IRandomProvider, VContainer.
 
 using System;
@@ -32,7 +32,7 @@ namespace ProjectResonance.Ghosts
         private readonly ICampfireService _campfireService;
         private readonly IRandomProvider _randomProvider;
         private readonly IObjectResolver _resolver;
-        private readonly ISubscriber<DayPhaseChangedMessage> _dayPhaseSubscriber;
+        private readonly ISubscriber<TimeOfDayChangedEvent> _timeOfDayChangedSubscriber;
         private readonly ISubscriber<HealthDepletedMessage> _healthDepletedSubscriber;
 
         private readonly List<GhostPresenter> _activeGhosts = new List<GhostPresenter>();
@@ -64,7 +64,7 @@ namespace ProjectResonance.Ghosts
             ICampfireService campfireService,
             IRandomProvider randomProvider,
             IObjectResolver resolver,
-            ISubscriber<DayPhaseChangedMessage> dayPhaseSubscriber,
+            ISubscriber<TimeOfDayChangedEvent> timeOfDayChangedSubscriber,
             ISubscriber<HealthDepletedMessage> healthDepletedSubscriber)
         {
             _config = config;
@@ -75,7 +75,7 @@ namespace ProjectResonance.Ghosts
             _campfireService = campfireService;
             _randomProvider = randomProvider;
             _resolver = resolver;
-            _dayPhaseSubscriber = dayPhaseSubscriber;
+            _timeOfDayChangedSubscriber = timeOfDayChangedSubscriber;
             _healthDepletedSubscriber = healthDepletedSubscriber;
         }
 
@@ -96,7 +96,7 @@ namespace ProjectResonance.Ghosts
                 poolCapacity,
                 maxPoolSize);
 
-            _dayPhaseSubscription = _dayPhaseSubscriber.Subscribe(OnDayPhaseChanged);
+            _dayPhaseSubscription = _timeOfDayChangedSubscriber.Subscribe(OnTimeOfDayChanged);
             _healthDepletedSubscription = _healthDepletedSubscriber.Subscribe(_ => DespawnAllGhosts());
 
             _spawnLoopCancellation = new CancellationTokenSource();
@@ -148,7 +148,8 @@ namespace ProjectResonance.Ghosts
 
         private bool CanSpawnGhost()
         {
-            return _dayNightService.CurrentPhase == DayPhase.Night &&
+            return (_dayNightService.CurrentTimeOfDay == TimeOfDay.Night ||
+                    _dayNightService.CurrentTimeOfDay == TimeOfDay.PreDawn) &&
                    _healthService.IsAlive &&
                    _activeGhosts.Count < _config.MaxAliveGhosts &&
                    _config.GhostPrefab != null;
@@ -226,9 +227,14 @@ namespace ProjectResonance.Ghosts
             }
         }
 
-        private void OnDayPhaseChanged(DayPhaseChangedMessage message)
+        private void OnTimeOfDayChanged(TimeOfDayChangedEvent message)
         {
-            if (message.CurrentPhase == DayPhase.Day)
+            if (message.CurrentTimeOfDay == TimeOfDay.Dawn ||
+                message.CurrentTimeOfDay == TimeOfDay.Morning ||
+                message.CurrentTimeOfDay == TimeOfDay.Noon ||
+                message.CurrentTimeOfDay == TimeOfDay.Afternoon ||
+                message.CurrentTimeOfDay == TimeOfDay.Sunset ||
+                message.CurrentTimeOfDay == TimeOfDay.Dusk)
             {
                 DespawnAllGhosts();
             }

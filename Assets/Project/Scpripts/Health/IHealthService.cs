@@ -29,5 +29,11 @@ namespace ProjectResonance.Health
         /// </summary>
         /// <param name="amount">Damage amount to subtract from health.</param>
         void ApplyDamage(float amount);
+
+        /// <summary>
+        /// Applies incoming healing to the player.
+        /// </summary>
+        /// <param name="amount">Healing amount to add to health.</param>
+        void ApplyHealing(float amount);
     }
 }
