@@ -1,10 +1,11 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireLightController.cs
-// Purpose: Drives point-light flicker, dying-state blinking and extinguish fade for the campfire.
-// Dependencies: UniTask, Common.Random, CampfireState, UnityEngine, VContainer.
+// Purpose: Drives point-light flicker, dying-state blinking and extinguish fade for the campfire while exposing it as a ghost light source.
+// Dependencies: UniTask, Common.Random, CampfireState, ILightSource, UnityEngine, VContainer.
 
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using ProjectResonance.Common.Random;
+using ProjectResonance.Ghosts;
 using UnityEngine;
 using VContainer;
 
@@ -15,7 +16,7 @@ namespace ProjectResonance.Campfire
     /// </summary>
     [AddComponentMenu("Project Resonance/Campfire/Campfire Light Controller")]
     [DisallowMultipleComponent]
-    public sealed class CampfireLightController : MonoBehaviour
+    public sealed class CampfireLightController : MonoBehaviour, ILightSource
     {
         [Header("References")]
         [SerializeField]
@@ -64,6 +65,38 @@ namespace ProjectResonance.Campfire
         private IRandomProvider _randomProvider;
         private float _baseIntensity;
         private float _baseRange;
+
+        /// <summary>
+        /// Gets the world-space position of the campfire light source.
+        /// </summary>
+        public Vector3 Position => _pointLight != null ? _pointLight.transform.position : transform.position;
+
+        /// <summary>
+        /// Gets the normalized light intensity used by ghost AI.
+        /// </summary>
+        public float NormalizedIntensity
+        {
+            get
+            {
+                if (_campfireState == null || !_campfireState.IsLit)
+                {
+                    return 0f;
+                }
+
+                var levelIntensity = _campfireState.Level == CampfireLevel.Basic
+                    ? 0.45f
+                    : _campfireState.Level == CampfireLevel.Reinforced
+                        ? 0.8f
+                        : 1f;
+
+                return Mathf.Clamp01(levelIntensity * Mathf.Lerp(_minimumFuelIntensityMultiplier, 1f, _campfireState.CurrentFuelNormalized));
+            }
+        }
+
+        /// <summary>
+        /// Gets whether the campfire is currently emitting light.
+        /// </summary>
+        public bool IsEmittingLight => _campfireState != null && _campfireState.IsLit;
 
         [Inject]
         private void Construct(CampfireState campfireState, IRandomProvider randomProvider)

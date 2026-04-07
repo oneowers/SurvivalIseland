@@ -37,6 +37,13 @@ namespace ProjectResonance.DayNight
     }
 
     /// <summary>
+    /// Event emitted when ghosts should leave the scene at daybreak.
+    /// </summary>
+    public readonly struct GhostsDeactivateEvent
+    {
+    }
+
+    /// <summary>
     /// Runtime translator from time-of-day phases to authored gameplay events.
     /// </summary>
     public sealed class TimeOfDayEventsSystem : IStartable, IDisposable
@@ -47,6 +54,7 @@ namespace ProjectResonance.DayNight
         private readonly IPublisher<SunsetWarningEvent> _sunsetWarningPublisher;
         private readonly IPublisher<GhostsActivateEvent> _ghostsActivatePublisher;
         private readonly IPublisher<LordWraithSpawnRequestEvent> _lordWraithSpawnRequestPublisher;
+        private readonly IPublisher<GhostsDeactivateEvent> _ghostsDeactivatePublisher;
 
         private IDisposable _timeOfDaySubscription;
 
@@ -59,13 +67,15 @@ namespace ProjectResonance.DayNight
         /// <param name="sunsetWarningPublisher">Sunset warning publisher.</param>
         /// <param name="ghostsActivatePublisher">Ghost-activation publisher.</param>
         /// <param name="lordWraithSpawnRequestPublisher">Lord-wraith request publisher.</param>
+        /// <param name="ghostsDeactivatePublisher">Ghost-deactivation publisher.</param>
         public TimeOfDayEventsSystem(
             ISubscriber<TimeOfDayChangedEvent> timeOfDayChangedSubscriber,
             IPublisher<BirdsStartSingingEvent> birdsStartSingingPublisher,
             IPublisher<BirdsStopSingingEvent> birdsStopSingingPublisher,
             IPublisher<SunsetWarningEvent> sunsetWarningPublisher,
             IPublisher<GhostsActivateEvent> ghostsActivatePublisher,
-            IPublisher<LordWraithSpawnRequestEvent> lordWraithSpawnRequestPublisher)
+            IPublisher<LordWraithSpawnRequestEvent> lordWraithSpawnRequestPublisher,
+            IPublisher<GhostsDeactivateEvent> ghostsDeactivatePublisher)
         {
             _timeOfDayChangedSubscriber = timeOfDayChangedSubscriber;
             _birdsStartSingingPublisher = birdsStartSingingPublisher;
@@ -73,6 +83,7 @@ namespace ProjectResonance.DayNight
             _sunsetWarningPublisher = sunsetWarningPublisher;
             _ghostsActivatePublisher = ghostsActivatePublisher;
             _lordWraithSpawnRequestPublisher = lordWraithSpawnRequestPublisher;
+            _ghostsDeactivatePublisher = ghostsDeactivatePublisher;
         }
 
         /// <summary>
@@ -96,7 +107,16 @@ namespace ProjectResonance.DayNight
             switch (message.CurrentTimeOfDay)
             {
                 case TimeOfDay.Dawn:
+                    _ghostsDeactivatePublisher.Publish(new GhostsDeactivateEvent());
                     _birdsStartSingingPublisher.Publish(new BirdsStartSingingEvent());
+                    break;
+                case TimeOfDay.Morning:
+                    // Sleeping skips directly to morning, so ghosts still need an explicit teardown event.
+                    if (message.PreviousTimeOfDay == TimeOfDay.Night || message.PreviousTimeOfDay == TimeOfDay.PreDawn)
+                    {
+                        _ghostsDeactivatePublisher.Publish(new GhostsDeactivateEvent());
+                    }
+
                     break;
                 case TimeOfDay.Sunset:
                     _birdsStopSingingPublisher.Publish(new BirdsStopSingingEvent());

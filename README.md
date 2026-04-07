@@ -81,3 +81,28 @@
 ### Удалено
 - Старый `DayNightCycleSystem` и `DayNightCycleConfig` больше не используются.
 - Временные debug-представления safe-zone, campfire runtime и служебный HUD-вывод удалены из финального состояния спринта.
+
+## Sprint 6 - Ghost Enemies
+
+В этом чате был собран полноценный модуль ночных призраков для survival-loop. Призраки переведены на отдельную архитектуру без `NavMesh`: движение работает через `CharacterController`, активация и деактивация идут от day/night-событий, свет анализируется через `Physics.OverlapSphereNonAlloc`, а спавн и возврат происходят через `ObjectPool<T>`.
+
+### Добавлено
+- Новый базовый класс `GhostBase` с pooled lifecycle, ночной активацией, движением сквозь геометрию и общей боевой логикой.
+- Новый призрак `PaleDrift` со state machine `Wandering -> LightSeeking -> PlayerPursuing -> Retreating`.
+- Новый призрак `LordWraith`, который появляется только в окне `03:00-04:00`, тянет игрока через `PlayerGravityPullEvent` и игнорирует слабую защиту костра.
+- `GhostLightDetector` с дешёвым overlap-сканированием источников света без raycast.
+- `GhostSpawnConfig` и обновлённый `GhostSpawnSystem` для роста числа призраков по дням, спавна из пула и очистки на рассвете.
+- Новые prefab-ы `PaleDrift` и `LordWraith`, подключённые к сцене и конфигу спавна.
+
+### Изменено
+- `ProjectBootstrapLifetimeScope` расширен регистрацией ghost/runtime-сообщений и зависимостей для gravity pull.
+- `PlayerMovementSystem` научен реагировать на `PlayerGravityPullEvent`.
+- `CampfireLightController` реализует `ILightSource`, чтобы призраки могли реагировать на интенсивность света костра.
+- `CampfireProtectionZone`, `TimeOfDayEventsSystem`, `SampleScene` и конфиги проекта обновлены под ночную активацию призраков и предрассветный спавн Lord Wraith.
+- Старые `GhostPresenter` и `GhostSpawnerConfig` сохранены как совместимые обёртки над новой архитектурой.
+
+### Доведено В Этом Чате
+- Исправлена интеграция `VContainer`, чтобы player-scope видел global `MessagePipe`-регистрации для ghost gravity pull.
+- Исправлена ошибка `A Character Controller cannot be a trigger`: trigger-коллайдеры призраков отделены от `CharacterController`.
+- Исправлено поведение света: `PaleDrift` больше не считает костёр безопасной приманкой и корректно отступает за периметр освещения.
+- Исправлен контактный урон: теперь призраки наносят урон не только через `OnTriggerEnter`, но и через надёжную proximity-проверку с кулдауном.

@@ -1,11 +1,9 @@
 // Path: Assets/Project/Scpripts/Ghosts/GhostSpawnSystem.cs
-// Purpose: Spawns and recycles ghosts during the active night phases.
-// Dependencies: UniTask, MessagePipe, GhostSpawnerConfig, ICampfireService, IDayNightService, IHealthService, IRandomProvider, VContainer.
+// Purpose: Spawns pooled Pale Drifts at night, requests the Lord Wraith during the pre-dawn window, and despawns all ghosts at daybreak.
+// Dependencies: MessagePipe, GhostSpawnConfig, GhostSpawnArea, GhostBase, ICampfireService, IDayNightService, IHealthService, IRandomProvider, VContainer.
 
 using System;
 using System.Collections.Generic;
-using System.Threading;
-using Cysharp.Threading.Tasks;
 using MessagePipe;
 using ProjectResonance.Campfire;
 using ProjectResonance.Common.Messages;
@@ -20,27 +18,34 @@ using VContainer.Unity;
 namespace ProjectResonance.Ghosts
 {
     /// <summary>
-    /// Owns ghost pooling and night-time spawning.
+    /// Owns pooled spawning for all nightly ghost enemies.
     /// </summary>
     public sealed class GhostSpawnSystem : IStartable, IDisposable
     {
-        private readonly GhostSpawnerConfig _config;
+        private readonly GhostSpawnConfig _config;
         private readonly GhostSpawnArea _spawnArea;
         private readonly PlayerSurvivor _player;
-        private readonly IHealthService _healthService;
-        private readonly IDayNightService _dayNightService;
         private readonly ICampfireService _campfireService;
         private readonly IRandomProvider _randomProvider;
         private readonly IObjectResolver _resolver;
-        private readonly ISubscriber<TimeOfDayChangedEvent> _timeOfDayChangedSubscriber;
+        private readonly IHealthService _healthService;
+        private readonly IDayNightService _dayNightService;
+        private readonly ISubscriber<GhostsActivateEvent> _ghostsActivateSubscriber;
+        private readonly ISubscriber<GhostsDeactivateEvent> _ghostsDeactivateSubscriber;
+        private readonly ISubscriber<LordWraithSpawnRequestEvent> _lordWraithSpawnRequestSubscriber;
         private readonly ISubscriber<HealthDepletedMessage> _healthDepletedSubscriber;
 
-        private readonly List<GhostPresenter> _activeGhosts = new List<GhostPresenter>();
+        private readonly List<GhostBase> _activeGhosts = new List<GhostBase>(16);
 
-        private CancellationTokenSource _spawnLoopCancellation;
-        private ObjectPool<GhostPresenter> _pool;
-        private IDisposable _dayPhaseSubscription;
+        private ObjectPool<GhostBase> _paleDriftPool;
+        private ObjectPool<GhostBase> _lordWraithPool;
+        private IDisposable _ghostsActivateSubscription;
+        private IDisposable _ghostsDeactivateSubscription;
+        private IDisposable _lordWraithSpawnRequestSubscription;
         private IDisposable _healthDepletedSubscription;
+        private bool _nightIsActive;
+        private bool _lordWraithSpawnedThisNight;
+        private int _currentDayNumber = 1;
 
         /// <summary>
         /// Initializes the ghost spawn system.
@@ -48,141 +53,181 @@ namespace ProjectResonance.Ghosts
         /// <param name="config">Ghost configuration.</param>
         /// <param name="spawnArea">Scene spawn area anchor.</param>
         /// <param name="player">Scene player anchor.</param>
-        /// <param name="healthService">Runtime health service.</param>
-        /// <param name="dayNightService">Runtime day and night service.</param>
         /// <param name="campfireService">Runtime campfire service.</param>
         /// <param name="randomProvider">Injectable random source.</param>
         /// <param name="resolver">Object resolver used to instantiate pooled ghosts.</param>
-        /// <param name="dayPhaseSubscriber">Day and night phase subscriber.</param>
+        /// <param name="healthService">Runtime player health service.</param>
+        /// <param name="dayNightService">Runtime day and night service.</param>
+        /// <param name="ghostsActivateSubscriber">Night activation subscriber.</param>
+        /// <param name="ghostsDeactivateSubscriber">Daybreak deactivation subscriber.</param>
+        /// <param name="lordWraithSpawnRequestSubscriber">Lord Wraith request subscriber.</param>
         /// <param name="healthDepletedSubscriber">Player death subscriber.</param>
         public GhostSpawnSystem(
-            GhostSpawnerConfig config,
+            GhostSpawnConfig config,
             GhostSpawnArea spawnArea,
             PlayerSurvivor player,
-            IHealthService healthService,
-            IDayNightService dayNightService,
             ICampfireService campfireService,
             IRandomProvider randomProvider,
             IObjectResolver resolver,
-            ISubscriber<TimeOfDayChangedEvent> timeOfDayChangedSubscriber,
+            IHealthService healthService,
+            IDayNightService dayNightService,
+            ISubscriber<GhostsActivateEvent> ghostsActivateSubscriber,
+            ISubscriber<GhostsDeactivateEvent> ghostsDeactivateSubscriber,
+            ISubscriber<LordWraithSpawnRequestEvent> lordWraithSpawnRequestSubscriber,
             ISubscriber<HealthDepletedMessage> healthDepletedSubscriber)
         {
             _config = config;
             _spawnArea = spawnArea;
             _player = player;
-            _healthService = healthService;
-            _dayNightService = dayNightService;
             _campfireService = campfireService;
             _randomProvider = randomProvider;
             _resolver = resolver;
-            _timeOfDayChangedSubscriber = timeOfDayChangedSubscriber;
+            _healthService = healthService;
+            _dayNightService = dayNightService;
+            _ghostsActivateSubscriber = ghostsActivateSubscriber;
+            _ghostsDeactivateSubscriber = ghostsDeactivateSubscriber;
+            _lordWraithSpawnRequestSubscriber = lordWraithSpawnRequestSubscriber;
             _healthDepletedSubscriber = healthDepletedSubscriber;
         }
 
         /// <summary>
-        /// Starts subscriptions and the background spawn loop.
+        /// Starts the spawn pools and event subscriptions.
         /// </summary>
         public void Start()
         {
-            var poolCapacity = Mathf.Max(1, _config.DefaultPoolCapacity);
-            var maxPoolSize = Mathf.Max(poolCapacity, _config.MaxAliveGhosts);
-
-            _pool = new ObjectPool<GhostPresenter>(
-                CreateGhost,
+            _paleDriftPool = new ObjectPool<GhostBase>(
+                CreatePaleDrift,
                 OnTakeFromPool,
                 OnReturnedToPool,
                 OnDestroyedFromPool,
                 false,
-                poolCapacity,
-                maxPoolSize);
+                Mathf.Max(1, _config != null ? _config.PaleDriftPoolCapacity : 8),
+                Mathf.Max(1, _config != null ? _config.MaxPaleDrifts : 8));
 
-            _dayPhaseSubscription = _timeOfDayChangedSubscriber.Subscribe(OnTimeOfDayChanged);
+            _lordWraithPool = new ObjectPool<GhostBase>(
+                CreateLordWraith,
+                OnTakeFromPool,
+                OnReturnedToPool,
+                OnDestroyedFromPool,
+                false,
+                Mathf.Max(1, _config != null ? _config.LordWraithPoolCapacity : 1),
+                1);
+
+            _ghostsActivateSubscription = _ghostsActivateSubscriber.Subscribe(_ => HandleGhostsActivated());
+            _ghostsDeactivateSubscription = _ghostsDeactivateSubscriber.Subscribe(_ => HandleGhostsDeactivated());
+            _lordWraithSpawnRequestSubscription = _lordWraithSpawnRequestSubscriber.Subscribe(_ => TrySpawnLordWraith());
             _healthDepletedSubscription = _healthDepletedSubscriber.Subscribe(_ => DespawnAllGhosts());
 
-            _spawnLoopCancellation = new CancellationTokenSource();
-            RunSpawnLoopAsync(_spawnLoopCancellation.Token).Forget();
+            if (_dayNightService != null &&
+                (_dayNightService.CurrentTimeOfDay == TimeOfDay.Night || _dayNightService.CurrentTimeOfDay == TimeOfDay.PreDawn))
+            {
+                HandleGhostsActivated();
+
+                if (IsLordWraithSpawnWindow())
+                {
+                    TrySpawnLordWraith();
+                }
+            }
         }
 
         /// <summary>
-        /// Stops the spawn loop and releases all runtime resources.
+        /// Stops subscriptions and disposes all pools.
         /// </summary>
         public void Dispose()
         {
-            _dayPhaseSubscription?.Dispose();
+            _ghostsActivateSubscription?.Dispose();
+            _ghostsDeactivateSubscription?.Dispose();
+            _lordWraithSpawnRequestSubscription?.Dispose();
             _healthDepletedSubscription?.Dispose();
 
-            if (_spawnLoopCancellation != null)
-            {
-                _spawnLoopCancellation.Cancel();
-                _spawnLoopCancellation.Dispose();
-                _spawnLoopCancellation = null;
-            }
-
             DespawnAllGhosts();
-            _pool?.Dispose();
+            _paleDriftPool?.Dispose();
+            _lordWraithPool?.Dispose();
         }
 
-        private async UniTaskVoid RunSpawnLoopAsync(CancellationToken cancellationToken)
+        private void HandleGhostsActivated()
         {
-            try
-            {
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    if (CanSpawnGhost())
-                    {
-                        TrySpawnGhost();
-                    }
-
-                    await UniTask.Delay(
-                        TimeSpan.FromSeconds(_config.SpawnIntervalSeconds),
-                        DelayType.DeltaTime,
-                        PlayerLoopTiming.Update,
-                        cancellationToken);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // The loop is expected to stop through container disposal.
-            }
-        }
-
-        private bool CanSpawnGhost()
-        {
-            return (_dayNightService.CurrentTimeOfDay == TimeOfDay.Night ||
-                    _dayNightService.CurrentTimeOfDay == TimeOfDay.PreDawn) &&
-                   _healthService.IsAlive &&
-                   _activeGhosts.Count < _config.MaxAliveGhosts &&
-                   _config.GhostPrefab != null;
-        }
-
-        private void TrySpawnGhost()
-        {
-            if (!TryFindSpawnPosition(out var spawnPosition))
+            if (_config == null || _spawnArea == null || _healthService == null || !_healthService.IsAlive)
             {
                 return;
             }
 
-            var ghost = _pool.Get();
-            ghost.Activate(spawnPosition);
+            _nightIsActive = true;
+            _lordWraithSpawnedThisNight = false;
+            DespawnAllGhosts();
+            SpawnPaleDrifts();
+        }
+
+        private void HandleGhostsDeactivated()
+        {
+            if (!_nightIsActive)
+            {
+                return;
+            }
+
+            _nightIsActive = false;
+            _lordWraithSpawnedThisNight = false;
+            DespawnAllGhosts();
+            _currentDayNumber++;
+        }
+
+        private void SpawnPaleDrifts()
+        {
+            if (_config == null || _config.PaleDriftPrefab == null)
+            {
+                return;
+            }
+
+            var spawnCount = _config.GetPaleDriftCountForDay(_currentDayNumber);
+            for (var spawnIndex = 0; spawnIndex < spawnCount; spawnIndex++)
+            {
+                if (!TryFindSpawnPosition(out var spawnPosition))
+                {
+                    continue;
+                }
+
+                var paleDrift = _paleDriftPool.Get();
+                paleDrift.Activate(spawnPosition);
+            }
+        }
+
+        private void TrySpawnLordWraith()
+        {
+            if (!_nightIsActive || _lordWraithSpawnedThisNight || _healthService == null || !_healthService.IsAlive || !IsLordWraithSpawnWindow())
+            {
+                return;
+            }
+
+            if (_config == null || _config.LordWraithPrefab == null || !TryFindSpawnPosition(out var spawnPosition))
+            {
+                return;
+            }
+
+            var lordWraith = _lordWraithPool.Get();
+            lordWraith.Activate(spawnPosition);
+            _lordWraithSpawnedThisNight = true;
         }
 
         private bool TryFindSpawnPosition(out Vector3 spawnPosition)
         {
             var areaCenter = _spawnArea.Center;
-            for (var attemptIndex = 0; attemptIndex < _config.SpawnPositionAttempts; attemptIndex++)
+            var attempts = _config != null ? _config.SpawnPositionAttempts : 12;
+
+            for (var attemptIndex = 0; attemptIndex < attempts; attemptIndex++)
             {
                 var offset = _randomProvider.InsideUnitCircle() * _spawnArea.Radius;
                 var candidate = areaCenter + new Vector3(offset.x, 0f, offset.y);
 
-                // Keep ghost entries away from the player so spawn events do not feel unfair or artificial.
-                if (GetPlanarDistance(candidate, _player.Position) < _config.MinSpawnDistanceFromPlayer)
+                // Ghost entrances stay off-screen and unfair pop-ins stay away from the player.
+                if (GetPlanarDistance(candidate, _player.Position) < (_config != null ? _config.MinSpawnDistanceFromPlayer : 20f))
                 {
                     continue;
                 }
 
-                if (_campfireService.IsLit)
+                if (_campfireService != null && _campfireService.IsLit)
                 {
-                    var minimumCampfireDistance = _campfireService.ProtectionRadius + _config.MinDistanceFromCampfire;
+                    // Active campfire space is treated as denied spawn area, with a small extra buffer outside the safe perimeter.
+                    var minimumCampfireDistance = _campfireService.ProtectionRadius + (_config != null ? _config.MinSpawnDistanceFromCampfire : 4f);
                     if (GetPlanarDistance(candidate, _campfireService.Position) < minimumCampfireDistance)
                     {
                         continue;
@@ -197,29 +242,41 @@ namespace ProjectResonance.Ghosts
             return false;
         }
 
-        private GhostPresenter CreateGhost()
+        private GhostBase CreatePaleDrift()
         {
-            var ghost = _resolver.Instantiate(_config.GhostPrefab, _spawnArea.transform);
-            ghost.BindPool(_pool);
-            ghost.gameObject.SetActive(false);
-            return ghost;
+            var paleDrift = _resolver.Instantiate(_config.PaleDriftPrefab, _spawnArea.transform);
+            paleDrift.BindPool(_paleDriftPool);
+            paleDrift.gameObject.SetActive(false);
+            return paleDrift;
         }
 
-        private void OnTakeFromPool(GhostPresenter ghost)
+        private GhostBase CreateLordWraith()
         {
-            if (!_activeGhosts.Contains(ghost))
+            var lordWraith = _resolver.Instantiate(_config.LordWraithPrefab, _spawnArea.transform);
+            lordWraith.BindPool(_lordWraithPool);
+            lordWraith.gameObject.SetActive(false);
+            return lordWraith;
+        }
+
+        private void OnTakeFromPool(GhostBase ghost)
+        {
+            if (ghost != null && !_activeGhosts.Contains(ghost))
             {
                 _activeGhosts.Add(ghost);
             }
         }
 
-        private void OnReturnedToPool(GhostPresenter ghost)
+        private void OnReturnedToPool(GhostBase ghost)
         {
             _activeGhosts.Remove(ghost);
-            ghost.gameObject.SetActive(false);
+
+            if (ghost != null)
+            {
+                ghost.gameObject.SetActive(false);
+            }
         }
 
-        private void OnDestroyedFromPool(GhostPresenter ghost)
+        private void OnDestroyedFromPool(GhostBase ghost)
         {
             if (ghost != null)
             {
@@ -227,25 +284,19 @@ namespace ProjectResonance.Ghosts
             }
         }
 
-        private void OnTimeOfDayChanged(TimeOfDayChangedEvent message)
-        {
-            if (message.CurrentTimeOfDay == TimeOfDay.Dawn ||
-                message.CurrentTimeOfDay == TimeOfDay.Morning ||
-                message.CurrentTimeOfDay == TimeOfDay.Noon ||
-                message.CurrentTimeOfDay == TimeOfDay.Afternoon ||
-                message.CurrentTimeOfDay == TimeOfDay.Sunset ||
-                message.CurrentTimeOfDay == TimeOfDay.Dusk)
-            {
-                DespawnAllGhosts();
-            }
-        }
-
         private void DespawnAllGhosts()
         {
             while (_activeGhosts.Count > 0)
             {
-                _activeGhosts[_activeGhosts.Count - 1].Despawn();
+                _activeGhosts[_activeGhosts.Count - 1].ReturnToPool();
             }
+        }
+
+        private bool IsLordWraithSpawnWindow()
+        {
+            // The global clock starts at dawn, so adding six hours maps the normalized cycle onto a conventional 24-hour clock.
+            var clockHour = Mathf.Repeat((_dayNightService != null ? _dayNightService.CurrentTimeNormalized : 0f) * 24f + 6f, 24f);
+            return clockHour >= 3f && clockHour < 4f;
         }
 
         private static float GetPlanarDistance(Vector3 from, Vector3 to)

@@ -11,6 +11,7 @@ using ProjectResonance.DayNight;
 using ProjectResonance.Ghosts;
 using ProjectResonance.Health;
 using ProjectResonance.HealthUI;
+using ProjectResonance.PlayerMovement;
 using UnityEngine;
 using VContainer;
 using VContainer.Unity;
@@ -70,6 +71,7 @@ public sealed class ProjectBootstrapLifetimeScope : LifetimeScope
         if (_ghostSpawnerConfig != null)
         {
             builder.RegisterInstance(_ghostSpawnerConfig);
+            builder.RegisterInstance((GhostSpawnConfig)_ghostSpawnerConfig);
         }
 
         if (_healthHudConfig != null)
@@ -150,7 +152,9 @@ public sealed class ProjectBootstrapLifetimeScope : LifetimeScope
         messagePipeBuilder.AddMessageBroker<BirdsStartSingingEvent>();
         messagePipeBuilder.AddMessageBroker<BirdsStopSingingEvent>();
         messagePipeBuilder.AddMessageBroker<GhostsActivateEvent>();
+        messagePipeBuilder.AddMessageBroker<GhostsDeactivateEvent>();
         messagePipeBuilder.AddMessageBroker<LordWraithSpawnRequestEvent>();
+        messagePipeBuilder.AddMessageBroker<PlayerGravityPullEvent>();
 
         var serviceProvider = messagePipeBuilder.BuildServiceProvider();
 
@@ -166,7 +170,9 @@ public sealed class ProjectBootstrapLifetimeScope : LifetimeScope
         RegisterMessage<BirdsStartSingingEvent>(builder, serviceProvider);
         RegisterMessage<BirdsStopSingingEvent>(builder, serviceProvider);
         RegisterMessage<GhostsActivateEvent>(builder, serviceProvider);
+        RegisterMessage<GhostsDeactivateEvent>(builder, serviceProvider);
         RegisterMessage<LordWraithSpawnRequestEvent>(builder, serviceProvider);
+        RegisterBufferedMessage<PlayerGravityPullEvent>(builder, serviceProvider);
     }
 
     private void RegisterMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)

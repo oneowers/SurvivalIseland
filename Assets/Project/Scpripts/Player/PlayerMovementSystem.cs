@@ -32,6 +32,40 @@ namespace ProjectResonance.PlayerMovement
     }
 
     /// <summary>
+    /// Published when an external system pulls the player toward a ghost source.
+    /// </summary>
+    public readonly struct PlayerGravityPullEvent
+    {
+        /// <summary>
+        /// Creates a new player gravity pull event.
+        /// </summary>
+        /// <param name="sourcePosition">World position of the pulling source.</param>
+        /// <param name="strength">Horizontal pull strength.</param>
+        /// <param name="radius">Effective pull radius.</param>
+        public PlayerGravityPullEvent(Vector3 sourcePosition, float strength, float radius)
+        {
+            SourcePosition = sourcePosition;
+            Strength = strength;
+            Radius = radius;
+        }
+
+        /// <summary>
+        /// Gets the world-space source position.
+        /// </summary>
+        public Vector3 SourcePosition { get; }
+
+        /// <summary>
+        /// Gets the authored pull strength.
+        /// </summary>
+        public float Strength { get; }
+
+        /// <summary>
+        /// Gets the effective pull radius.
+        /// </summary>
+        public float Radius { get; }
+    }
+
+    /// <summary>
     /// ScriptableObject with all player movement tuning values.
     /// </summary>
     [CreateAssetMenu(fileName = "PlayerMovementConfig", menuName = "Project Resonance/Player/Player Movement Config")]
@@ -245,6 +279,7 @@ namespace ProjectResonance.PlayerMovement
         private readonly ISubscriber<JumpInput> _jumpInputSubscriber;
         private readonly ISubscriber<CrouchInput> _crouchInputSubscriber;
         private readonly IBufferedSubscriber<WeightChangedEvent> _weightChangedSubscriber;
+        private readonly IBufferedSubscriber<PlayerGravityPullEvent> _gravityPullSubscriber;
         private readonly IPublisher<FootstepEvent> _footstepPublisher;
 
         private IDisposable _moveSubscription;
@@ -252,19 +287,25 @@ namespace ProjectResonance.PlayerMovement
         private IDisposable _jumpSubscription;
         private IDisposable _crouchSubscription;
         private IDisposable _weightSubscription;
+        private IDisposable _gravityPullSubscription;
 
         private Vector2 _moveInput;
         private Vector3 _horizontalVelocity;
         private Vector3 _horizontalVelocitySmoothRef;
         private Vector3 _lastPlanarPosition;
         private Vector3 _initialControllerCenter;
+        private Vector3 _gravityPullSourcePosition;
         private float _verticalVelocity;
         private float _stepDistanceAccumulator;
         private float _currentTargetHeight;
+        private float _gravityPullStrength;
+        private float _gravityPullRadius;
         private bool _isSprintRequested;
         private bool _isCrouching;
         private bool _jumpRequested;
+        private bool _hasGravityPull;
         private PlayerWeightType _currentWeight;
+        private int _gravityPullFrame = -1;
 
         /// <summary>
         /// Creates the player movement system.
@@ -278,6 +319,7 @@ namespace ProjectResonance.PlayerMovement
         /// <param name="jumpInputSubscriber">Jump input subscriber.</param>
         /// <param name="crouchInputSubscriber">Crouch input subscriber.</param>
         /// <param name="weightChangedSubscriber">Weight changed subscriber.</param>
+        /// <param name="gravityPullSubscriber">Ghost gravity pull subscriber.</param>
         /// <param name="footstepPublisher">Footstep publisher.</param>
         public PlayerMovementSystem(
             CharacterController characterController,
@@ -289,6 +331,7 @@ namespace ProjectResonance.PlayerMovement
             ISubscriber<JumpInput> jumpInputSubscriber,
             ISubscriber<CrouchInput> crouchInputSubscriber,
             IBufferedSubscriber<WeightChangedEvent> weightChangedSubscriber,
+            IBufferedSubscriber<PlayerGravityPullEvent> gravityPullSubscriber,
             IPublisher<FootstepEvent> footstepPublisher)
         {
             _characterController = characterController;
@@ -300,6 +343,7 @@ namespace ProjectResonance.PlayerMovement
             _jumpInputSubscriber = jumpInputSubscriber;
             _crouchInputSubscriber = crouchInputSubscriber;
             _weightChangedSubscriber = weightChangedSubscriber;
+            _gravityPullSubscriber = gravityPullSubscriber;
             _footstepPublisher = footstepPublisher;
         }
 
@@ -320,6 +364,7 @@ namespace ProjectResonance.PlayerMovement
             _jumpSubscription = _jumpInputSubscriber.Subscribe(OnJumpRequested);
             _crouchSubscription = _crouchInputSubscriber.Subscribe(OnCrouchRequested);
             _weightSubscription = _weightChangedSubscriber.Subscribe(OnWeightChanged);
+            _gravityPullSubscription = _gravityPullSubscriber.Subscribe(OnGravityPullRequested);
         }
 
         /// <summary>
@@ -336,6 +381,7 @@ namespace ProjectResonance.PlayerMovement
             UpdateControllerHeight(deltaTime);
             UpdateVerticalVelocity(deltaTime);
             UpdateHorizontalVelocity(deltaTime);
+            ApplyGravityPull(deltaTime);
             MoveCharacter(deltaTime);
             UpdateFootsteps();
         }
@@ -350,6 +396,7 @@ namespace ProjectResonance.PlayerMovement
             _jumpSubscription?.Dispose();
             _crouchSubscription?.Dispose();
             _weightSubscription?.Dispose();
+            _gravityPullSubscription?.Dispose();
         }
 
         private void OnMoveInputChanged(MoveInput message)
@@ -376,6 +423,15 @@ namespace ProjectResonance.PlayerMovement
         private void OnWeightChanged(WeightChangedEvent message)
         {
             _currentWeight = message.CurrentWeight;
+        }
+
+        private void OnGravityPullRequested(PlayerGravityPullEvent message)
+        {
+            _gravityPullSourcePosition = message.SourcePosition;
+            _gravityPullStrength = Mathf.Max(0f, message.Strength);
+            _gravityPullRadius = Mathf.Max(0.1f, message.Radius);
+            _hasGravityPull = _gravityPullStrength > 0f;
+            _gravityPullFrame = Time.frameCount;
         }
 
         private void UpdateVerticalVelocity(float deltaTime)
@@ -429,6 +485,39 @@ namespace ProjectResonance.PlayerMovement
                     targetRotation,
                     _config.RotationSharpness * deltaTime);
             }
+        }
+
+        private void ApplyGravityPull(float deltaTime)
+        {
+            if (!_hasGravityPull)
+            {
+                return;
+            }
+
+            if (Time.frameCount - _gravityPullFrame > 1)
+            {
+                _hasGravityPull = false;
+                return;
+            }
+
+            var offset = _gravityPullSourcePosition - _characterController.transform.position;
+            offset.y = 0f;
+
+            var sqrDistance = offset.sqrMagnitude;
+            if (sqrDistance <= Mathf.Epsilon)
+            {
+                return;
+            }
+
+            var distance = Mathf.Sqrt(sqrDistance);
+            if (distance > _gravityPullRadius)
+            {
+                return;
+            }
+
+            // The pull scales with proximity so the Lord Wraith feels heavier the closer it gets.
+            var pullWeight = 1f - Mathf.Clamp01(distance / _gravityPullRadius);
+            _horizontalVelocity += offset.normalized * (_gravityPullStrength * pullWeight * deltaTime);
         }
 
         private Vector3 ResolveMoveDirection()

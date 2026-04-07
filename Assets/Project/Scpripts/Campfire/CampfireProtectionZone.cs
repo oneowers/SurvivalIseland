@@ -1,6 +1,6 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireProtectionZone.cs
 // Purpose: Periodically scans the campfire safe zone and publishes player/ghost presence events.
-// Dependencies: UniTask, MessagePipe, Physics, PlayerSurvivor, GhostPresenter, UnityEngine, VContainer.
+// Dependencies: UniTask, MessagePipe, Physics, PlayerSurvivor, GhostBase, UnityEngine, VContainer.
 
 using System.Collections.Generic;
 using System.Threading;
@@ -42,7 +42,7 @@ namespace ProjectResonance.Campfire
         /// Creates a new ghost-in-light event.
         /// </summary>
         /// <param name="ghost">Detected ghost instance.</param>
-        public GhostInLightEvent(GhostPresenter ghost)
+        public GhostInLightEvent(GhostBase ghost)
         {
             Ghost = ghost;
         }
@@ -50,7 +50,7 @@ namespace ProjectResonance.Campfire
         /// <summary>
         /// Gets the detected ghost.
         /// </summary>
-        public GhostPresenter Ghost { get; }
+        public GhostBase Ghost { get; }
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ namespace ProjectResonance.Campfire
         [Min(4)]
         private int _overlapBufferSize = 32;
 
-        private readonly List<GhostPresenter> _ghostBuffer = new List<GhostPresenter>(16);
+        private readonly List<GhostBase> _ghostBuffer = new List<GhostBase>(16);
 
         private CampfireState _campfireState;
         private CampfireAnchor _campfireAnchor;
@@ -165,7 +165,7 @@ namespace ProjectResonance.Campfire
             // A ghost can have multiple colliders, so we collapse duplicate hits before publishing.
             for (var index = 0; index < hitCount; index++)
             {
-                var ghost = _overlapResults[index] != null ? _overlapResults[index].GetComponentInParent<GhostPresenter>() : null;
+                var ghost = _overlapResults[index] != null ? _overlapResults[index].GetComponentInParent<GhostBase>() : null;
                 if (ghost == null || _ghostBuffer.Contains(ghost))
                 {
                     continue;

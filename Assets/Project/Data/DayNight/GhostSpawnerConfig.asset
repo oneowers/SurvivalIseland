@@ -12,15 +12,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 489971882a34944e7bb7dcb37249c3dc, type: 3}
   m_Name: GhostSpawnerConfig
   m_EditorClassIdentifier: 
-  _ghostPrefab: {fileID: 0}
-  _spawnIntervalSeconds: 8
-  _maxAliveGhosts: 8
-  _defaultPoolCapacity: 8
-  _spawnPositionAttempts: 8
-  _movementSpeed: 2.5
-  _retreatSpeedMultiplier: 1.5
-  _attackRange: 1.5
-  _attackDamage: 10
-  _attackIntervalSeconds: 1.5
-  _minSpawnDistanceFromPlayer: 10
-  _minDistanceFromCampfire: 2
+  _paleDriftPrefab: {fileID: 100005, guid: 4b001a9de943476ebcc2ccb0d307dde7, type: 3}
+  _lordWraithPrefab: {fileID: 200005, guid: 9ca7e62cdfb4406b89f78294f3149998, type: 3}
+  _basePaleDriftCount: 3
+  _paleDriftPerDay: 1
+  _maxPaleDrifts: 8
+  _minSpawnDistanceFromPlayer: 20
+  _minSpawnDistanceFromCampfire: 4
+  _spawnPositionAttempts: 12
+  _wanderSpeed: 1.5
+  _pursuitSpeed: 3.5
+  _fearLightThreshold: 0.6
+  _paleDriftPoolCapacity: 8
+  _lordWraithPoolCapacity: 1
+  _lordWraithPullStrength: 2.5
+  _lordWraithPullRadius: 14
