@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ab12e4c9d8f24d0c8f1b8a0d5f61c201, type: 3}
+  m_Name: AimTargetingConfig
+  m_EditorClassIdentifier: 
+  _maxAimRadius: 3
+  _scanFrequencySeconds: 0.05
+  _broadphaseLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  _maxDetectedColliders: 32
+  _targetAnchorHeightBias: 0.9
+  _selectionDeadZone: 0.08
+  _facingRotationSpeed: 14
+  _selectionFlashColor: {r: 1, g: 0.78, b: 0.28, a: 1}
+  _selectionFlashDuration: 1
+  _selectionFlashStrength: 0.85

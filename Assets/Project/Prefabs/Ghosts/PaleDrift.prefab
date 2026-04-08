@@ -13,6 +13,9 @@ GameObject:
   - component: {fileID: 100003}
   - component: {fileID: 100004}
   - component: {fileID: 100005}
+  - component: {fileID: 100010}
+  - component: {fileID: 100011}
+  - component: {fileID: 100012}
   m_Layer: 6
   m_Name: PaleDrift
   m_TagString: Untagged
@@ -123,6 +126,47 @@ MonoBehaviour:
   _retreatPerimeterPadding: 1.5
   _retreatHoldSeconds: 1.8
   _contactDamage: 15
+--- !u!114 &100010
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c9f4a8b3d12e4c7a8bf2190d6a31e502, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _targetAnchor: {fileID: 100007}
+  _hitReceiverSource: {fileID: 100012}
+--- !u!114 &100011
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3de270a18f9c4d4eb5a612b3f60cf309, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _maxHealth: 3
+  _ghost: {fileID: 100005}
+--- !u!114 &100012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ef381b29a0d4e5fc6b723c4a71df40a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _combatHealth: {fileID: 100011}
 --- !u!1 &100006
 GameObject:
   m_ObjectHideFlags: 0

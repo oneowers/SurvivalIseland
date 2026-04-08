@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d0fd7f7c8c34eb79fbe1be44d6d6df3, type: 3}
+  m_Name: WorldItemPickupConfig
+  m_EditorClassIdentifier: 
+  _pickupPrefab: {fileID: 0}
+  _initialPoolCapacity: 8
+  _maxPoolSize: 32
+  _movementMode: 1
+  _pickupDuration: 0.45
+  _arcHeight: 1
+  _pickupTimeout: 3
+  _pickupDistance: 0.3
+  _closeLerpSpeed: 8
+  _impulseForce: 4.5
+  _impulseUpwardForce: 2
+  _switchToLerpDistance: 1.2
+  _impulseDuration: 0.35

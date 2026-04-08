@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7a2d9abf607754df59651b67eceb9911, type: 3}
   m_Name: DayNightConfig
   m_EditorClassIdentifier: 
-  _gameDayDuration: 10
+  _gameDayDuration: 100
   _phases:
   - _startNormalized: 0
     _label: 0

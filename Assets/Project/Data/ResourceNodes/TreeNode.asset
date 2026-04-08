@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 73a9d6d9fe6b4a3fb20812e0c9b4c4a1, type: 3}
+  m_Name: TreeNode
+  m_EditorClassIdentifier: 
+  _itemId: log
+  _displayName: Log
+  _icon: {fileID: 0}
+  _weight: 4
+  _isStackable: 1
+  _maxStackSize: 20
+  _itemType: 0
+  _worldPrefab: {fileID: 100100000, guid: b287632ff4ff34045a3d56813405cbe8, type: 3}
+  _resourceId: tree
+  _nodeDisplayName: Tree
+  _resourceType: 0
+  _maxHealth: 4
+  _dropCount: 3
+  _decalPrefab: {fileID: 6985459120196761510, guid: 5def60b301f8e4819a412ecea3e94909, type: 3}
+  _decalSize: {x: 0.32, y: 0.32, z: 0.32}
+  _minDecalOpacity: 0.3
+  _maxDecalOpacity: 1
+  _decalPoolCapacity: 12
+  _hitSounds: []
+  _breakSound: {fileID: 0}

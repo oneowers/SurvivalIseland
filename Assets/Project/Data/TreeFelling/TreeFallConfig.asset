@@ -16,7 +16,7 @@ MonoBehaviour:
   _branchLifetimeSeconds: 18
   _swayAngleDegrees: 8
   _fallAngleDegrees: 88
-  _logPrefab: {fileID: 0}
+  _logPrefab: {fileID: 8683106428820987934, guid: b287632ff4ff34045a3d56813405cbe8, type: 3}
   _minLogsOnFall: 2
   _maxLogsOnFall: 3
   _logSpawnHeight: 0.55

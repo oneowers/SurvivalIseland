@@ -12,14 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 0}
   m_Name: CameraConfig
   m_EditorClassIdentifier: Assembly-CSharp:ProjectResonance.ThirdPersonCamera:CameraConfig
-  _normalDistance: 3.5
-  _combatDistance: 2.5
-  _buildDistance: 5
-  _sprintDistanceOffset: 0.5
-  _minZoomDistance: 2
-  _maxZoomDistance: 6
+  _normalDistance: 8.916064
+  _combatDistance: 7.5
+  _buildDistance: 10.5
+  _sprintDistanceOffset: 0.75
+  _minZoomDistance: 5
+  _maxZoomDistance: 12
   _zoomSensitivity: 0.1
-  _shoulderOffset: {x: 0.55, y: 0.2, z: 0}
+  _shoulderOffset: {x: -0.16485044, y: -1.2793103, z: 0}
   _yawSensitivity: 0.35
   _pitchSensitivity: 0.3
   _minPitch: -30

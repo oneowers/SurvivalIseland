@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2451a2ab58f0945ac8a92f369e88ca72, type: 3}
+  m_Name: MobileControlsConfig
+  m_EditorClassIdentifier: 
+  _visibilityMode: 0
+  _manualModeActive: 0
+  _edgePadding: 48
+  _bottomPadding: 56
+  _clusterSpacing: 24
+  _joystickSize: {x: 220, y: 220}
+  _joystickHandleSize: 92
+  _secondaryButtonSize: 92
+  _primaryButtonSize: 122
+  _labelFontSize: 24
+  _joystickDeadZone: 0.08
+  _joystickBackgroundColor: {r: 0.1, g: 0.1, b: 0.12, a: 0.42}
+  _joystickHandleColor: {r: 1, g: 1, b: 1, a: 0.9}
+  _secondaryButtonColor: {r: 0.14, g: 0.14, b: 0.16, a: 0.82}
+  _primaryButtonColor: {r: 0.26, g: 0.36, b: 0.18, a: 0.92}
+  _buttonTextColor: {r: 1, g: 1, b: 1, a: 1}
+  _mobileCameraYaw: -35
+  _mobileCameraPitch: 45
+  _mobileCameraDistance: 8.916064
+  _mobileCameraShoulderOffset: {x: -0.16485044, y: -1.2793103, z: 0}
+  _mobileCameraYawFollowSharpness: 10
