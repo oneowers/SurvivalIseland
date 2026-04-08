@@ -164,6 +164,7 @@ namespace ProjectResonance.InventoryUI
                 slotView.SetBackgroundColor(_backgroundColor);
                 slotView.SetIcon(null, _emptyTintColor);
                 slotView.SetCount(string.Empty);
+                slotView.SetDurabilityVisible(false);
             }
         }
 
@@ -241,10 +242,16 @@ namespace ProjectResonance.InventoryUI
 
                 var itemDefinition = stack.ItemDefinition;
                 var icon = itemDefinition != null ? itemDefinition.Icon : null;
-                var countText = stack.IsEmpty ? string.Empty : stack.Count.ToString();
+                var countText = stack.IsEmpty || stack.HasDurability ? string.Empty : stack.Count.ToString();
 
                 slotView.SetIcon(icon, stack.IsEmpty ? _emptyTintColor : _filledTintColor);
                 slotView.SetCount(countText);
+                slotView.SetDurabilityVisible(stack.HasDurability);
+                if (stack.HasDurability)
+                {
+                    slotView.SetDurabilityNormalized(stack.DurabilityNormalized);
+                    Debug.Log($"[InventoryHUD] Durable slot refreshed. Slot={slotIndex}, Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Durability={stack.CurrentDurability}/{stack.MaxDurability}");
+                }
             }
 
             RefreshSlotHighlights();

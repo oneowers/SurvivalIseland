@@ -62,6 +62,7 @@ namespace ProjectResonance.Campfire
         private float _minimumFuelIntensityMultiplier = 0.35f;
 
         private CampfireState _campfireState;
+        private CampfireAnchor _campfireAnchor;
         private IRandomProvider _randomProvider;
         private float _baseIntensity;
         private float _baseRange;
@@ -99,10 +100,11 @@ namespace ProjectResonance.Campfire
         public bool IsEmittingLight => _campfireState != null && _campfireState.IsLit;
 
         [Inject]
-        private void Construct(CampfireState campfireState, IRandomProvider randomProvider)
+        private void Construct(CampfireState campfireState, IRandomProvider randomProvider, CampfireAnchor campfireAnchor = null)
         {
             _campfireState = campfireState;
             _randomProvider = randomProvider;
+            _campfireAnchor = campfireAnchor;
         }
 
         private void Awake()
@@ -132,6 +134,8 @@ namespace ProjectResonance.Campfire
             }
 
             var wasLit = _campfireState != null && _campfireState.IsLit;
+            UpdateEmbersState(wasLit);
+
             if (!wasLit)
             {
                 _pointLight.enabled = false;
@@ -149,6 +153,7 @@ namespace ProjectResonance.Campfire
                 if (_campfireState.IsLit)
                 {
                     wasLit = true;
+                    UpdateEmbersState(true);
                     ApplyFlickerSample();
 
                     await UniTask.Delay(
@@ -162,16 +167,23 @@ namespace ProjectResonance.Campfire
 
                 if (wasLit)
                 {
+                    UpdateEmbersState(false);
                     await FadeOutAsync(cancellationToken);
                     wasLit = false;
                 }
                 else
                 {
+                    UpdateEmbersState(false);
                     _pointLight.enabled = false;
                     _pointLight.intensity = 0f;
                     await UniTask.Delay(100, DelayType.DeltaTime, PlayerLoopTiming.Update, cancellationToken);
                 }
             }
+        }
+
+        private void UpdateEmbersState(bool isLit)
+        {
+            _campfireAnchor?.SetEmbersActive(isLit);
         }
 
         private void ApplyFlickerSample()

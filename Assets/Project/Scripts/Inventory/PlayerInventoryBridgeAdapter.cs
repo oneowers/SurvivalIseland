@@ -28,12 +28,6 @@ namespace ProjectResonance.Inventory
         [SerializeField]
         private ItemDefinition _firesteelItem;
 
-        [SerializeField]
-        private ItemDefinition _stoneAxeItem;
-
-        [SerializeField]
-        private ItemDefinition _ironAxeItem;
-
         private InventorySystem _inventorySystem;
         private IBufferedSubscriber<ActiveSlotChangedEvent> _activeSlotChangedSubscriber;
 
@@ -77,16 +71,9 @@ namespace ProjectResonance.Inventory
             }
 
             var activeSlot = _inventorySystem.GetSlot(_activeSlotIndex);
-            var activeItem = activeSlot.ItemDefinition;
-
-            if (activeItem == _ironAxeItem)
+            if (activeSlot.ItemDefinition != null && activeSlot.ItemDefinition.IsTool)
             {
-                return AxeTier.Iron;
-            }
-
-            if (activeItem == _stoneAxeItem)
-            {
-                return AxeTier.Stone;
+                return activeSlot.ItemDefinition.AxeTier;
             }
 
             return AxeTier.None;

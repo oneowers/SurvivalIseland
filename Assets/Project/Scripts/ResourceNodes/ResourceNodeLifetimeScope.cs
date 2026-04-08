@@ -115,5 +115,29 @@ namespace ProjectResonance.ResourceNodes
             builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
             builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
         }
+
+        /// <summary>
+        /// Instantiates a resource-node prefab through the resource-node scope so all gameplay dependencies are injected.
+        /// </summary>
+        /// <param name="prefab">Prefab to spawn.</param>
+        /// <param name="position">World spawn position.</param>
+        /// <param name="rotation">World spawn rotation.</param>
+        /// <returns>Injected resource-node instance, or null when the scope is unavailable.</returns>
+        public GameObject InstantiateResourceNode(GameObject prefab, Vector3 position, Quaternion rotation)
+        {
+            if (prefab == null)
+            {
+                Debug.LogWarning("[ResourceNodeLifetimeScope] InstantiateResourceNode ignored because prefab is null.", this);
+                return null;
+            }
+
+            if (Container == null)
+            {
+                Debug.LogWarning("[ResourceNodeLifetimeScope] InstantiateResourceNode ignored because Container is not ready yet.", this);
+                return null;
+            }
+
+            return Container.Instantiate(prefab, position, rotation);
+        }
     }
 }

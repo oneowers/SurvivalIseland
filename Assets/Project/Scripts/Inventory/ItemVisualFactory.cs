@@ -1,7 +1,8 @@
 // Path: Assets/Project/Scripts/Inventory/ItemVisualFactory.cs
 // Purpose: Centralizes safe item visual instantiation for held items, crafting previews, and world-pickup fallback visuals.
-// Dependencies: UnityEngine, VContainer, ItemDefinition.
+// Dependencies: UnityEngine, VContainer, ItemDefinition, ProjectResonance.ResourceNodes.
 
+using ProjectResonance.ResourceNodes;
 using UnityEngine;
 using VContainer;
 using VContainer.Unity;
@@ -101,11 +102,27 @@ namespace ProjectResonance.Inventory
                 return false;
             }
 
+            if (ContainsGameplayOnlyComponents(worldPrefab))
+            {
+                Debug.LogWarning(
+                    $"[ItemVisualFactory] '{itemDefinition.DisplayName}' uses gameplay prefab '{worldPrefab.name}' as WorldPrefab. {usageContext} visuals require a clean visual prefab, not a resource-node prefab.",
+                    itemDefinition);
+                return false;
+            }
+
             try
             {
                 instance = _resolver != null
                     ? _resolver.Instantiate(worldPrefab, parent, false)
                     : Object.Instantiate(worldPrefab, parent, false);
+            }
+            catch (VContainerException exception)
+            {
+                Debug.LogWarning(
+                    $"[ItemVisualFactory] Failed to DI-instantiate WorldPrefab '{worldPrefab.name}' for item '{ResolveDisplayName(itemDefinition)}' while creating {usageContext} visual. Assign a visual-only prefab. Exception={exception.Message}",
+                    itemDefinition);
+                instance = null;
+                return false;
             }
             catch (MissingReferenceException)
             {
@@ -117,6 +134,12 @@ namespace ProjectResonance.Inventory
             }
 
             return instance != null;
+        }
+
+        private static bool ContainsGameplayOnlyComponents(GameObject worldPrefab)
+        {
+            return worldPrefab.GetComponentInChildren<ResourceNodeRuntime>(true) != null
+                   || worldPrefab.GetComponentInChildren<ResourceNodeAuthoring>(true) != null;
         }
 
         private static string ResolveDisplayName(ItemDefinition itemDefinition)

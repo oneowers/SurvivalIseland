@@ -19,6 +19,7 @@ namespace ProjectResonance.PlayerCombat
         private readonly Camera _playerCamera;
         private readonly AimTargetingConfig _config;
         private readonly IBufferedSubscriber<AimInput> _aimInputSubscriber;
+        private readonly IPlayerAimModeQuery _playerAimModeQuery;
 
         private IDisposable _aimInputSubscription;
         private Collider[] _overlapResults;
@@ -37,12 +38,14 @@ namespace ProjectResonance.PlayerCombat
             CharacterController characterController,
             Camera playerCamera,
             AimTargetingConfig config,
-            IBufferedSubscriber<AimInput> aimInputSubscriber)
+            IBufferedSubscriber<AimInput> aimInputSubscriber,
+            IPlayerAimModeQuery playerAimModeQuery)
         {
             _characterController = characterController;
             _playerCamera = playerCamera;
             _config = config;
             _aimInputSubscriber = aimInputSubscriber;
+            _playerAimModeQuery = playerAimModeQuery;
         }
 
         /// <summary>
@@ -71,6 +74,13 @@ namespace ProjectResonance.PlayerCombat
         /// </summary>
         public void Tick()
         {
+            if (_playerAimModeQuery != null && _playerAimModeQuery.IsPlantingModeActive)
+            {
+                SetCurrentTarget(null);
+                _scanCooldown = 0f;
+                return;
+            }
+
             if (!HasActiveAim)
             {
                 SetCurrentTarget(null);

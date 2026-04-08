@@ -53,6 +53,17 @@ namespace ProjectResonance.PlayerCombat
         [Range(0f, 1f)]
         private float _selectionFlashStrength = 0.7f;
 
+        [Header("Planting Preview")]
+        [SerializeField]
+        private Color _plantingPreviewValidColor = new Color(0.34f, 0.92f, 0.45f, 0.42f);
+
+        [SerializeField]
+        private Color _plantingPreviewInvalidColor = new Color(1f, 0.28f, 0.22f, 0.26f);
+
+        [SerializeField]
+        [Min(0f)]
+        private float _plantingPreviewHeightOffset = 0.02f;
+
         /// <summary>
         /// Gets the maximum world radius reachable by the aim stick.
         /// </summary>
@@ -103,6 +114,21 @@ namespace ProjectResonance.PlayerCombat
         /// </summary>
         public float SelectionFlashStrength => _selectionFlashStrength > 0f ? Mathf.Clamp01(_selectionFlashStrength) : 0.85f;
 
+        /// <summary>
+        /// Gets the color used when the planting preview is currently valid.
+        /// </summary>
+        public Color PlantingPreviewValidColor => _plantingPreviewValidColor.a > 0f ? _plantingPreviewValidColor : new Color(0.34f, 0.92f, 0.45f, 0.42f);
+
+        /// <summary>
+        /// Gets the color used when the planting preview is blocked or invalid.
+        /// </summary>
+        public Color PlantingPreviewInvalidColor => _plantingPreviewInvalidColor.a > 0f ? _plantingPreviewInvalidColor : new Color(1f, 0.28f, 0.22f, 0.26f);
+
+        /// <summary>
+        /// Gets the small vertical offset applied so the planting preview does not z-fight with the ground.
+        /// </summary>
+        public float PlantingPreviewHeightOffset => Mathf.Max(0f, _plantingPreviewHeightOffset);
+
         private void OnValidate()
         {
             _maxAimRadius = Mathf.Max(0.1f, _maxAimRadius);
@@ -113,6 +139,7 @@ namespace ProjectResonance.PlayerCombat
             _facingRotationSpeed = Mathf.Max(0.1f, _facingRotationSpeed);
             _selectionFlashDuration = Mathf.Max(0.05f, _selectionFlashDuration);
             _selectionFlashStrength = Mathf.Clamp01(_selectionFlashStrength);
+            _plantingPreviewHeightOffset = Mathf.Max(0f, _plantingPreviewHeightOffset);
         }
     }
 }

@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a11c2d3e4f5678901234567890abcde, type: 3}
+  m_Name: Flintitem
+  m_EditorClassIdentifier: 
+  _itemId: flint
+  _displayName: "\u041A\u0440\u0435\u043C\u0435\u043D\u044C"
+  _icon: {fileID: 0}
+  _weight: 0.2
+  _isStackable: 1
+  _maxStackSize: 10
+  _itemType: 3
+  _worldPrefab: {fileID: 100100000, guid: acef82edbd9114b129243a45740dc5cc, type: 3}
+  _axeTier: 0
+  _usesDurability: 0
+  _maxDurability: 20
+  _breaksOnZeroDurability: 1
+  _resourceId: 
+  _nodeDisplayName: 
+  _resourceNodeType: 4
+  _maxHealth: 4
+  _dropCount: 1
+  _canPlantFromInventory: 0
+  _plantSpawnPrefab: {fileID: 0}
+  _snapPlantingToIntegerGrid: 1
+  _plantingGroundMask:
+    serializedVersion: 2
+    m_Bits: 1
+  _plantingProbeHeight: 3
+  _plantingProbeDistance: 8
+  _plantingClearRadius: 0.75
+  _decalPrefab: {fileID: 0}
+  _decalSize: {x: 0.32, y: 0.32, z: 0.32}
+  _minDecalOpacity: 0.3
+  _maxDecalOpacity: 1
+  _decalPoolCapacity: 12
+  _hitSounds: []
+  _breakSound: {fileID: 0}

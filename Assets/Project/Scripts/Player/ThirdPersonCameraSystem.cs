@@ -260,6 +260,11 @@ namespace ProjectResonance.ThirdPersonCamera
         /// </summary>
         public void Start()
         {
+            if (_playerCamera == null || _cameraTarget == null || _config == null || _weightState == null)
+            {
+                return;
+            }
+
             var eulerAngles = _playerCamera.transform.rotation.eulerAngles;
             _yaw = eulerAngles.y;
             _pitch = NormalizePitch(eulerAngles.x);
@@ -276,6 +281,11 @@ namespace ProjectResonance.ThirdPersonCamera
         /// </summary>
         public void LateTick()
         {
+            if (_playerCamera == null || _cameraTarget == null || _config == null)
+            {
+                return;
+            }
+
             var deltaTime = Time.deltaTime;
             if (deltaTime <= 0f)
             {
@@ -294,7 +304,9 @@ namespace ProjectResonance.ThirdPersonCamera
         public void Dispose()
         {
             _sprintSubscription?.Dispose();
+            _sprintSubscription = null;
             _weightSubscription?.Dispose();
+            _weightSubscription = null;
 
             foreach (var pair in _occluderStates)
             {
@@ -361,6 +373,11 @@ namespace ProjectResonance.ThirdPersonCamera
 
         private void UpdateFollow(float deltaTime)
         {
+            if (_cameraTarget == null || _playerCamera == null)
+            {
+                return;
+            }
+
             _followPosition = Vector3.SmoothDamp(
                 _followPosition,
                 _cameraTarget.FollowPosition,
@@ -435,6 +452,11 @@ namespace ProjectResonance.ThirdPersonCamera
 
         private void UpdateOccluders(float deltaTime)
         {
+            if (_cameraTarget == null || _playerCamera == null || _config == null)
+            {
+                return;
+            }
+
             _visibleOccluders.Clear();
 
             var targetPosition = _cameraTarget.FollowPosition;
@@ -548,6 +570,11 @@ namespace ProjectResonance.ThirdPersonCamera
             /// <returns>True when the renderer is fully restored and can be removed from tracking.</returns>
             public bool Tick(float targetAlpha, float fadeSpeed, float deltaTime)
             {
+                if (_renderer == null)
+                {
+                    return true;
+                }
+
                 if (_colorPropertyId < 0)
                 {
                     return targetAlpha >= 0.999f;
@@ -576,6 +603,11 @@ namespace ProjectResonance.ThirdPersonCamera
             /// </summary>
             public void Restore()
             {
+                if (_renderer == null)
+                {
+                    return;
+                }
+
                 _renderer.SetPropertyBlock(null);
             }
         }

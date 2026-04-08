@@ -24,15 +24,34 @@ namespace ProjectResonance.Inventory
         [Min(0)]
         private int _count;
 
+        [SerializeField]
+        [Min(0)]
+        private int _currentDurability;
+
+        [SerializeField]
+        [Min(0)]
+        private int _maxDurability;
+
         /// <summary>
         /// Creates a new item stack.
         /// </summary>
         /// <param name="itemDefinition">Item definition stored in the stack.</param>
         /// <param name="count">Item count in the stack.</param>
-        public ItemStack(ItemDefinition itemDefinition, int count)
+        public ItemStack(ItemDefinition itemDefinition, int count, int currentDurability = 0, int maxDurability = 0)
         {
+            if (itemDefinition == null || count <= 0)
+            {
+                _itemDefinition = null;
+                _count = 0;
+                _currentDurability = 0;
+                _maxDurability = 0;
+                return;
+            }
+
             _itemDefinition = itemDefinition;
             _count = Mathf.Max(0, count);
+            _maxDurability = Mathf.Max(0, maxDurability);
+            _currentDurability = Mathf.Clamp(currentDurability, 0, _maxDurability);
         }
 
         /// <summary>
@@ -46,6 +65,26 @@ namespace ProjectResonance.Inventory
         public int Count => _count;
 
         /// <summary>
+        /// Gets the current runtime durability for the item in this slot.
+        /// </summary>
+        public int CurrentDurability => _currentDurability;
+
+        /// <summary>
+        /// Gets the maximum runtime durability for the item in this slot.
+        /// </summary>
+        public int MaxDurability => _maxDurability;
+
+        /// <summary>
+        /// Gets whether the slot item currently uses durability.
+        /// </summary>
+        public bool HasDurability => _maxDurability > 0;
+
+        /// <summary>
+        /// Gets the normalized durability ratio.
+        /// </summary>
+        public float DurabilityNormalized => HasDurability ? Mathf.Clamp01((float)_currentDurability / _maxDurability) : 0f;
+
+        /// <summary>
         /// Gets whether the stack is empty.
         /// </summary>
         public bool IsEmpty => _itemDefinition == null || _count <= 0;
@@ -57,7 +96,18 @@ namespace ProjectResonance.Inventory
         /// <returns>Updated stack copy.</returns>
         public ItemStack WithCount(int count)
         {
-            return new ItemStack(_itemDefinition, count);
+            return new ItemStack(_itemDefinition, count, _currentDurability, _maxDurability);
+        }
+
+        /// <summary>
+        /// Returns a copy with updated durability values.
+        /// </summary>
+        /// <param name="currentDurability">Updated current durability.</param>
+        /// <param name="maxDurability">Updated maximum durability.</param>
+        /// <returns>Updated stack copy.</returns>
+        public ItemStack WithDurability(int currentDurability, int maxDurability)
+        {
+            return new ItemStack(_itemDefinition, _count, currentDurability, maxDurability);
         }
 
         /// <summary>
@@ -157,6 +207,7 @@ namespace ProjectResonance.Inventory
         public void Start()
         {
             EnsureInitialized();
+            ApplyStartupLoadout();
             PublishInventoryChanged();
         }
 
@@ -231,71 +282,58 @@ namespace ProjectResonance.Inventory
         /// <returns>True when the full amount was added.</returns>
         public bool AddItem(ItemDefinition itemDefinition, int count)
         {
+            return AddItemInternal(itemDefinition, count, publishInventoryChanged: true, logAddedItem: true);
+        }
+
+        /// <summary>
+        /// Attempts to remove the item stored in a specific slot.
+        /// </summary>
+        /// <param name="slotIndex">Slot index to clear.</param>
+        /// <returns>True when the slot contained an item and was cleared.</returns>
+        public bool RemoveItemAt(int slotIndex)
+        {
             EnsureInitialized();
 
-            if (!CanAddItem(itemDefinition, count))
+            if (slotIndex < 0 || slotIndex >= _slots.Count || _slots[slotIndex].IsEmpty)
             {
-                Debug.LogWarning(
-                    $"[InventorySystem] AddItem failed. Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Count={count}, Snapshot={BuildInventorySnapshot()}");
                 return false;
             }
 
-            var remaining = count;
+            var removedStack = _slots[slotIndex];
+            _slots[slotIndex] = removedStack.Clear();
+            PublishInventoryChanged();
+            Debug.Log($"[InventorySystem] Removed slot item at index {slotIndex}. Item={(removedStack.ItemDefinition != null ? removedStack.ItemDefinition.DisplayName : "null")}. Snapshot={BuildInventorySnapshot()}");
+            return true;
+        }
 
-            if (itemDefinition.IsStackable)
+        /// <summary>
+        /// Attempts to consume items directly from the requested slot.
+        /// </summary>
+        /// <param name="slotIndex">Slot index to mutate.</param>
+        /// <param name="amount">Amount to remove from the slot.</param>
+        /// <returns>True when the slot contained enough items and was updated.</returns>
+        public bool TryConsumeItemAt(int slotIndex, int amount)
+        {
+            EnsureInitialized();
+
+            if (amount <= 0 || slotIndex < 0 || slotIndex >= _slots.Count)
             {
-                for (var index = 0; index < _slots.Count; index++)
-                {
-                    var slot = _slots[index];
-                    if (slot.IsEmpty || slot.ItemDefinition != itemDefinition)
-                    {
-                        continue;
-                    }
-
-                    var freeSpace = Mathf.Max(0, itemDefinition.MaxStackSize - slot.Count);
-                    if (freeSpace <= 0)
-                    {
-                        continue;
-                    }
-
-                    var amountToMove = Mathf.Min(remaining, freeSpace);
-                    _slots[index] = slot.WithCount(slot.Count + amountToMove);
-                    remaining -= amountToMove;
-
-                    if (remaining <= 0)
-                    {
-                        PublishInventoryChanged();
-                        LogInventoryAdded(itemDefinition, count);
-                        return true;
-                    }
-                }
+                return false;
             }
 
-            for (var index = 0; index < _slots.Count; index++)
+            var slot = _slots[slotIndex];
+            if (slot.IsEmpty || slot.Count < amount)
             {
-                if (!_slots[index].IsEmpty)
-                {
-                    continue;
-                }
-
-                var amountToStore = itemDefinition.IsStackable
-                    ? Mathf.Min(remaining, itemDefinition.MaxStackSize)
-                    : 1;
-
-                _slots[index] = new ItemStack(itemDefinition, amountToStore);
-                remaining -= amountToStore;
-
-                if (remaining <= 0)
-                {
-                    PublishInventoryChanged();
-                    LogInventoryAdded(itemDefinition, count);
-                    return true;
-                }
+                return false;
             }
 
-            Debug.LogWarning(
-                $"[InventorySystem] AddItem reached unexpected incomplete state. Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Count={count}, Remaining={remaining}, Snapshot={BuildInventorySnapshot()}");
-            return false;
+            var nextCount = slot.Count - amount;
+            _slots[slotIndex] = nextCount > 0 ? slot.WithCount(nextCount) : slot.Clear();
+            PublishInventoryChanged();
+
+            Debug.Log(
+                $"[InventorySystem] Consumed {amount}x {(slot.ItemDefinition != null ? slot.ItemDefinition.DisplayName : "null")} from slot {slotIndex}. Snapshot={BuildInventorySnapshot()}");
+            return true;
         }
 
         /// <summary>
@@ -372,12 +410,196 @@ namespace ProjectResonance.Inventory
             return false;
         }
 
+        /// <summary>
+        /// Attempts to get durability data for the requested slot.
+        /// </summary>
+        /// <param name="slotIndex">Slot index to inspect.</param>
+        /// <param name="currentDurability">Resolved current durability.</param>
+        /// <param name="maxDurability">Resolved maximum durability.</param>
+        /// <returns>True when the slot contains an item with durability.</returns>
+        public bool TryGetActiveDurability(int slotIndex, out int currentDurability, out int maxDurability)
+        {
+            EnsureInitialized();
+
+            if (slotIndex >= 0 && slotIndex < _slots.Count)
+            {
+                var slot = _slots[slotIndex];
+                if (slot.HasDurability)
+                {
+                    currentDurability = slot.CurrentDurability;
+                    maxDurability = slot.MaxDurability;
+                    return true;
+                }
+            }
+
+            currentDurability = 0;
+            maxDurability = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Attempts to consume durability from the item stored in the requested slot.
+        /// </summary>
+        /// <param name="slotIndex">Slot index to mutate.</param>
+        /// <param name="amount">Durability amount to consume.</param>
+        /// <returns>True when durability was consumed.</returns>
+        public bool TryConsumeItemDurability(int slotIndex, int amount)
+        {
+            EnsureInitialized();
+
+            if (amount <= 0 || slotIndex < 0 || slotIndex >= _slots.Count)
+            {
+                return false;
+            }
+
+            var slot = _slots[slotIndex];
+            var itemDefinition = slot.ItemDefinition;
+            if (slot.IsEmpty || !slot.HasDurability || itemDefinition == null || !itemDefinition.UsesDurability)
+            {
+                return false;
+            }
+
+            var nextDurability = Mathf.Max(0, slot.CurrentDurability - amount);
+            if (nextDurability <= 0 && itemDefinition.BreaksOnZeroDurability)
+            {
+                _slots[slotIndex] = slot.Clear();
+                PublishInventoryChanged();
+                Debug.LogWarning($"[InventorySystem] '{itemDefinition.DisplayName}' broke and was removed from slot {slotIndex}. Snapshot={BuildInventorySnapshot()}");
+                return true;
+            }
+
+            _slots[slotIndex] = slot.WithDurability(nextDurability, slot.MaxDurability);
+            PublishInventoryChanged();
+            Debug.Log($"[InventorySystem] Consumed {amount} durability from '{itemDefinition.DisplayName}'. Remaining={nextDurability}/{slot.MaxDurability}, Slot={slotIndex}, Snapshot={BuildInventorySnapshot()}");
+            return true;
+        }
+
         private void EnsureInitialized()
         {
             while (_slots.Count < MaxSlots)
             {
                 _slots.Add(new ItemStack(null, 0));
             }
+        }
+
+        private bool AddItemInternal(ItemDefinition itemDefinition, int count, bool publishInventoryChanged, bool logAddedItem)
+        {
+            EnsureInitialized();
+
+            if (!CanAddItem(itemDefinition, count))
+            {
+                Debug.LogWarning(
+                    $"[InventorySystem] AddItem failed. Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Count={count}, Snapshot={BuildInventorySnapshot()}");
+                return false;
+            }
+
+            var remaining = count;
+
+            if (itemDefinition.IsStackable)
+            {
+                for (var index = 0; index < _slots.Count; index++)
+                {
+                    var slot = _slots[index];
+                    if (slot.IsEmpty || slot.ItemDefinition != itemDefinition)
+                    {
+                        continue;
+                    }
+
+                    var freeSpace = Mathf.Max(0, itemDefinition.MaxStackSize - slot.Count);
+                    if (freeSpace <= 0)
+                    {
+                        continue;
+                    }
+
+                    var amountToMove = Mathf.Min(remaining, freeSpace);
+                    _slots[index] = slot.WithCount(slot.Count + amountToMove);
+                    remaining -= amountToMove;
+
+                    if (remaining <= 0)
+                    {
+                        if (publishInventoryChanged)
+                        {
+                            PublishInventoryChanged();
+                        }
+
+                        if (logAddedItem)
+                        {
+                            LogInventoryAdded(itemDefinition, count);
+                        }
+
+                        return true;
+                    }
+                }
+            }
+
+            for (var index = 0; index < _slots.Count; index++)
+            {
+                if (!_slots[index].IsEmpty)
+                {
+                    continue;
+                }
+
+                var amountToStore = itemDefinition.IsStackable
+                    ? Mathf.Min(remaining, itemDefinition.MaxStackSize)
+                    : 1;
+
+                _slots[index] = CreateRuntimeStack(itemDefinition, amountToStore);
+                remaining -= amountToStore;
+
+                if (remaining <= 0)
+                {
+                    if (publishInventoryChanged)
+                    {
+                        PublishInventoryChanged();
+                    }
+
+                    if (logAddedItem)
+                    {
+                        LogInventoryAdded(itemDefinition, count);
+                    }
+
+                    return true;
+                }
+            }
+
+            Debug.LogWarning(
+                $"[InventorySystem] AddItem reached unexpected incomplete state. Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Count={count}, Remaining={remaining}, Snapshot={BuildInventorySnapshot()}");
+            return false;
+        }
+
+        private void ApplyStartupLoadout()
+        {
+            if (_inventoryConfig == null || _inventoryConfig.StartupItems == null)
+            {
+                return;
+            }
+
+            for (var index = 0; index < _inventoryConfig.StartupItems.Count; index++)
+            {
+                var entry = _inventoryConfig.StartupItems[index];
+                if (entry.ItemDefinition == null || entry.Count <= 0)
+                {
+                    continue;
+                }
+
+                if (!AddItemInternal(entry.ItemDefinition, entry.Count, publishInventoryChanged: false, logAddedItem: true))
+                {
+                    Debug.LogWarning($"[InventorySystem] Failed to apply startup loadout item '{entry.ItemDefinition.DisplayName}' x{entry.Count}.");
+                    continue;
+                }
+
+                Debug.Log($"[InventorySystem] Startup loadout granted {entry.Count}x {entry.ItemDefinition.DisplayName}.");
+            }
+        }
+
+        private static ItemStack CreateRuntimeStack(ItemDefinition itemDefinition, int count)
+        {
+            if (itemDefinition != null && itemDefinition.UsesDurability)
+            {
+                return new ItemStack(itemDefinition, Mathf.Max(1, count), itemDefinition.MaxDurability, itemDefinition.MaxDurability);
+            }
+
+            return new ItemStack(itemDefinition, Mathf.Max(1, count));
         }
 
         private void PublishInventoryChanged()
@@ -419,6 +641,15 @@ namespace ProjectResonance.Inventory
                 builder.Append(slot.ItemDefinition != null ? slot.ItemDefinition.DisplayName : "null");
                 builder.Append('x');
                 builder.Append(slot.Count);
+
+                if (slot.HasDurability)
+                {
+                    builder.Append('(');
+                    builder.Append(slot.CurrentDurability);
+                    builder.Append('/');
+                    builder.Append(slot.MaxDurability);
+                    builder.Append(')');
+                }
             }
 
             builder.Append(']');

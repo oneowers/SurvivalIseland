@@ -46,7 +46,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0d2352a93c1394e4cb3ff86abb877cbd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _itemDefinition: {fileID: 11400000, guid: 21d7472b8d454ae5a2e74b9d37e87f9f, type: 2}
+  _itemDefinition: {fileID: 11400000, guid: 7a1d3c8f0b5e4c3d9a7b6c5d4e3f2101, type: 2}
   _quantity: 1
   _movementMode: 1
   _pickupDuration: 0.45

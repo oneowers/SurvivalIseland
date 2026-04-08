@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a11c2d3e4f5678901234567890abcde, type: 3}
+  m_Name: IronAxeitem
+  m_EditorClassIdentifier: 
+  _itemId: iron_axe
+  _displayName: "\u0416\u0435\u043B\u0435\u0437\u043D\u044B\u0439 \u0442\u043E\u043F\u043E\u0440"
+  _icon: {fileID: 21300000, guid: 3d61abb67439a4e6abf6bbd6d8a7fd3f, type: 3}
+  _weight: 3.5
+  _isStackable: 0
+  _maxStackSize: 1
+  _itemType: 1
+  _worldPrefab: {fileID: 100100000, guid: acef82edbd9114b129243a45740dc5cc, type: 3}
+  _axeTier: 2
+  _usesDurability: 0
+  _maxDurability: 40
+  _breaksOnZeroDurability: 1
+  _resourceId: 
+  _nodeDisplayName: 
+  _resourceNodeType: 4
+  _maxHealth: 4
+  _dropCount: 1
+  _canPlantFromInventory: 0
+  _plantSpawnPrefab: {fileID: 0}
+  _snapPlantingToIntegerGrid: 1
+  _plantingGroundMask:
+    serializedVersion: 2
+    m_Bits: 1
+  _plantingProbeHeight: 3
+  _plantingProbeDistance: 8
+  _plantingClearRadius: 0.75

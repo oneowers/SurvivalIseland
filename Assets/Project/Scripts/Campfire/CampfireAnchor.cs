@@ -26,6 +26,33 @@ namespace ProjectResonance.Campfire
         public Transform FirePoint => _firePoint != null ? _firePoint : transform;
 
         /// <summary>
+        /// Enables or disables the campfire ember particle system.
+        /// </summary>
+        /// <param name="isLit">Whether the campfire should visually burn.</param>
+        public void SetEmbersActive(bool isLit)
+        {
+            if (_embers == null)
+            {
+                return;
+            }
+
+            if (isLit)
+            {
+                if (!_embers.isPlaying)
+                {
+                    _embers.Play();
+                }
+
+                return;
+            }
+
+            if (_embers.isPlaying)
+            {
+                _embers.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+        }
+
+        /// <summary>
         /// Applies the current runtime visual state to the campfire.
         /// </summary>
         /// <param name="isLit">Whether the campfire is lit.</param>
@@ -42,22 +69,7 @@ namespace ProjectResonance.Campfire
                     : 0f;
             }
 
-            if (_embers == null)
-            {
-                return;
-            }
-
-            if (isLit)
-            {
-                if (!_embers.isPlaying)
-                {
-                    _embers.Play();
-                }
-            }
-            else if (_embers.isPlaying)
-            {
-                _embers.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            }
+            SetEmbersActive(isLit);
         }
     }
 }

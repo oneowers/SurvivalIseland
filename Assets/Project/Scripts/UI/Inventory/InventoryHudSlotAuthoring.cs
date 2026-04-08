@@ -30,6 +30,14 @@ namespace ProjectResonance.InventoryUI
         [SerializeField]
         private TMP_Text _countText;
 
+        [SerializeField]
+        private GameObject _durabilityBarRoot;
+
+        [SerializeField]
+        private Image _durabilityBarFill;
+
+        private Sprite _fallbackIconSprite;
+
         /// <summary>
         /// Raised when the slot is pressed by pointer or touch.
         /// </summary>
@@ -77,10 +85,10 @@ namespace ProjectResonance.InventoryUI
                 return;
             }
 
-            _iconImage.sprite = icon;
+            _iconImage.sprite = ResolveIconSprite(icon, tint);
             _iconImage.color = tint;
             _iconImage.preserveAspect = true;
-            _iconImage.enabled = icon != null || tint.a > 0f;
+            _iconImage.enabled = _iconImage.sprite != null || tint.a > 0f;
         }
 
         /// <summary>
@@ -98,6 +106,45 @@ namespace ProjectResonance.InventoryUI
 
             _countText.text = countText;
             _countText.enabled = !string.IsNullOrWhiteSpace(countText);
+        }
+
+        /// <summary>
+        /// Applies the normalized durability value to the authored slot bar.
+        /// </summary>
+        /// <param name="normalizedDurability">Normalized durability in the range [0..1].</param>
+        public void SetDurabilityNormalized(float normalizedDurability)
+        {
+            EnsureReferences();
+
+            if (_durabilityBarFill == null)
+            {
+                return;
+            }
+
+            _durabilityBarFill.fillAmount = Mathf.Clamp01(normalizedDurability);
+            _durabilityBarFill.color = new Color(0.39f, 0.75f, 0.29f, 1f);
+            _durabilityBarFill.SetVerticesDirty();
+            _durabilityBarFill.SetMaterialDirty();
+        }
+
+        /// <summary>
+        /// Shows or hides the authored durability bar.
+        /// </summary>
+        /// <param name="isVisible">Whether the durability bar should be visible.</param>
+        public void SetDurabilityVisible(bool isVisible)
+        {
+            EnsureReferences();
+
+            if (_durabilityBarRoot != null)
+            {
+                _durabilityBarRoot.SetActive(isVisible);
+                return;
+            }
+
+            if (_durabilityBarFill != null)
+            {
+                _durabilityBarFill.enabled = isVisible;
+            }
         }
 
         /// <summary>
@@ -159,6 +206,43 @@ namespace ProjectResonance.InventoryUI
             {
                 _countText.raycastTarget = false;
             }
+
+            if (_durabilityBarRoot == null)
+            {
+                var durabilityRoot = transform.Find("DurabilityBarRoot");
+                if (durabilityRoot != null)
+                {
+                    _durabilityBarRoot = durabilityRoot.gameObject;
+                }
+            }
+
+            if (_durabilityBarFill == null)
+            {
+                var durabilityFill = transform.Find("DurabilityBarRoot/DurabilityBarFill");
+                if (durabilityFill != null)
+                {
+                    _durabilityBarFill = durabilityFill.GetComponent<Image>();
+                }
+            }
+
+            if (_durabilityBarFill != null)
+            {
+                _durabilityBarFill.type = Image.Type.Filled;
+                _durabilityBarFill.fillMethod = Image.FillMethod.Horizontal;
+                _durabilityBarFill.fillOrigin = 0;
+                _durabilityBarFill.raycastTarget = false;
+            }
+        }
+
+        private Sprite ResolveIconSprite(Sprite icon, Color tint)
+        {
+            if (icon != null || tint.a <= 0f)
+            {
+                return icon;
+            }
+
+            _fallbackIconSprite ??= Resources.GetBuiltinResource<Sprite>("UISprite.psd");
+            return _fallbackIconSprite;
         }
     }
 }

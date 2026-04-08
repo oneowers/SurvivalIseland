@@ -15,42 +15,67 @@ namespace ProjectResonance.ResourceNodes
     public sealed class ResourceNodeAuthoring : MonoBehaviour
     {
         [SerializeField]
-        private ResourceNodeDefinition _definition;
+        private ItemDefinition _definition;
+
+        [Header("Feedback")]
+        [SerializeField]
+        private GameObject _decalPrefab;
+
+        [SerializeField]
+        private Vector3 _decalSize = new Vector3(0.32f, 0.32f, 0.32f);
+
+        [SerializeField]
+        [Range(0f, 1f)]
+        private float _minDecalOpacity = 0.3f;
+
+        [SerializeField]
+        [Range(0f, 1f)]
+        private float _maxDecalOpacity = 1f;
+
+        [SerializeField]
+        [Min(1)]
+        private int _decalPoolCapacity = 12;
+
+        [SerializeField]
+        private AudioClip[] _hitSounds;
+
+        [SerializeField]
+        private AudioClip _breakSound;
 
         /// <summary>
         /// Gets the authored resource node definition assigned to this object.
         /// </summary>
-        public ResourceNodeDefinition Definition => _definition;
+        public ItemDefinition Definition => ResolveResourceDefinition();
 
         /// <summary>
         /// Gets the authored resource type, or <see cref="ResourceNodeType.Custom"/> when no definition is assigned.
         /// </summary>
-        public ResourceNodeType ResourceType => _definition != null ? _definition.ResourceType : ResourceNodeType.Custom;
+        public ResourceNodeType ResourceType => ResolveResourceDefinition() != null ? ResolveResourceDefinition().ResourceType : ResourceNodeType.Custom;
 
         /// <summary>
         /// Gets the authored resource display name, or the GameObject name when no definition is assigned.
         /// </summary>
-        public string DisplayName => _definition != null ? _definition.NodeDisplayName : gameObject.name;
+        public string DisplayName => ResolveResourceDefinition() != null ? ResolveResourceDefinition().NodeDisplayName : gameObject.name;
 
         /// <summary>
         /// Gets the inventory item definition authored for this resource node.
         /// </summary>
-        public ItemDefinition DropItemDefinition => _definition;
+        public ItemDefinition DropItemDefinition => ResolveResourceDefinition();
 
         /// <summary>
         /// Gets the maximum health authored for this resource node.
         /// </summary>
-        public int MaxHealth => _definition != null ? _definition.MaxHealth : 1;
+        public int MaxHealth => ResolveResourceDefinition() != null ? ResolveResourceDefinition().MaxHealth : 1;
 
         /// <summary>
         /// Gets the drop count authored for this resource node.
         /// </summary>
-        public int DropCount => _definition != null ? _definition.DropCount : 0;
+        public int DropCount => ResolveResourceDefinition() != null ? ResolveResourceDefinition().DropCount : 0;
 
         /// <summary>
         /// Gets the break sound authored for this resource node.
         /// </summary>
-        public AudioClip BreakSound => _definition != null ? _definition.BreakSound : null;
+        public AudioClip BreakSound => _breakSound;
 
         /// <summary>
         /// Resolves a deterministic hit sound from the authored resource definition.
@@ -59,7 +84,13 @@ namespace ProjectResonance.ResourceNodes
         /// <returns>Configured hit sound, or null when none is authored.</returns>
         public AudioClip GetHitSound(int strikeIndex)
         {
-            return _definition != null ? _definition.GetHitSound(strikeIndex) : null;
+            if (_hitSounds == null || _hitSounds.Length == 0)
+            {
+                return null;
+            }
+
+            var hitSoundIndex = Mathf.Abs(strikeIndex) % _hitSounds.Length;
+            return _hitSounds[hitSoundIndex];
         }
 
         /// <summary>
@@ -72,7 +103,8 @@ namespace ProjectResonance.ResourceNodes
         /// <returns>True when the current definition can emit a decal event.</returns>
         public bool TryCreateDecalEvent(Transform hitAnchor, int hitsRemaining, int maxHits, out ResourceDecalEvent resourceDecalEvent)
         {
-            if (_definition == null || _definition.DecalPrefab == null || hitAnchor == null)
+            var definition = ResolveResourceDefinition();
+            if (definition == null || _decalPrefab == null || hitAnchor == null)
             {
                 resourceDecalEvent = default;
                 return false;
@@ -80,15 +112,39 @@ namespace ProjectResonance.ResourceNodes
 
             resourceDecalEvent = new ResourceDecalEvent(
                 hitAnchor,
-                _definition.DecalPrefab,
-                _definition.DecalSize,
-                _definition.MinDecalOpacity,
-                _definition.MaxDecalOpacity,
-                _definition.DecalPoolCapacity,
+                _decalPrefab,
+                _decalSize,
+                _minDecalOpacity,
+                _maxDecalOpacity,
+                Mathf.Max(1, _decalPoolCapacity),
                 hitsRemaining,
                 maxHits);
 
             return true;
+        }
+
+        private void OnValidate()
+        {
+            if (_definition != null && !_definition.IsResourceNode)
+            {
+                Debug.LogWarning($"[ResourceNodeAuthoring] '{name}' expects an ItemDefinition with ItemType=Resource. Assigned '{_definition.DisplayName}' is {_definition.ItemType}.", this);
+            }
+
+            _minDecalOpacity = Mathf.Clamp01(_minDecalOpacity);
+            _maxDecalOpacity = Mathf.Clamp01(_maxDecalOpacity);
+            _decalPoolCapacity = Mathf.Max(1, _decalPoolCapacity);
+
+            if (_maxDecalOpacity < _minDecalOpacity)
+            {
+                _maxDecalOpacity = _minDecalOpacity;
+            }
+        }
+
+        private ItemDefinition ResolveResourceDefinition()
+        {
+            return _definition != null && _definition.IsResourceNode
+                ? _definition
+                : null;
         }
     }
 }

@@ -16,3 +16,6 @@ MonoBehaviour:
   _heldVisualPoolCapacityPerItem: 2
   _craftedPreviewPoolCapacityPerItem: 2
   _maxPooledVisualsPerItem: 20
+  _startupItems:
+  - _itemDefinition: {fileID: 11400000, guid: a4df59b1308c4f48cd6f9b3fbe2d5404, type: 2}
+    _count: 1

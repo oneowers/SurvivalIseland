@@ -2,10 +2,36 @@
 // Purpose: Defines the shared runtime inventory capacities and pool sizing used across gameplay and UI.
 // Dependencies: UnityEngine.
 
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ProjectResonance.Inventory
 {
+    /// <summary>
+    /// Authored startup loadout item entry.
+    /// </summary>
+    [System.Serializable]
+    public struct InventoryLoadoutEntry
+    {
+        [SerializeField]
+        private ItemDefinition _itemDefinition;
+
+        [SerializeField]
+        [Min(1)]
+        private int _count;
+
+        /// <summary>
+        /// Gets the authored item definition.
+        /// </summary>
+        public ItemDefinition ItemDefinition => _itemDefinition;
+
+        /// <summary>
+        /// Gets the authored item count.
+        /// </summary>
+        public int Count => Mathf.Max(1, _count);
+    }
+
     /// <summary>
     /// Shared authoring config for the runtime inventory.
     /// </summary>
@@ -28,6 +54,10 @@ namespace ProjectResonance.Inventory
         [Min(1)]
         private int _maxPooledVisualsPerItem = 20;
 
+        [Header("Startup Loadout")]
+        [SerializeField]
+        private InventoryLoadoutEntry[] _startupItems = Array.Empty<InventoryLoadoutEntry>();
+
         /// <summary>
         /// Gets the maximum number of runtime inventory slots.
         /// </summary>
@@ -47,6 +77,11 @@ namespace ProjectResonance.Inventory
         /// Gets the maximum pooled visual instances allowed per unique item definition.
         /// </summary>
         public int MaxPooledVisualsPerItem => Mathf.Max(1, _maxPooledVisualsPerItem);
+
+        /// <summary>
+        /// Gets the startup items granted to the player on scene boot.
+        /// </summary>
+        public IReadOnlyList<InventoryLoadoutEntry> StartupItems => _startupItems ?? Array.Empty<InventoryLoadoutEntry>();
 
         private void OnValidate()
         {

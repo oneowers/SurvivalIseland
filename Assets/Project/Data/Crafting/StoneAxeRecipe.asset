@@ -13,11 +13,11 @@ MonoBehaviour:
   m_Name: StoneAxeRecipe
   m_EditorClassIdentifier: 
   _requiredItems:
-  - _itemDefinition: {fileID: 11400000, guid: 21d7472b8d454ae5a2e74b9d37e87f9f, type: 2}
+  - _itemDefinition: {fileID: 11400000, guid: 7a1d3c8f0b5e4c3d9a7b6c5d4e3f2101, type: 2}
     _count: 1
-  - _itemDefinition: {fileID: 11400000, guid: 21d7472b8d454ae5a2e74b9d37e87f9f, type: 2}
+  - _itemDefinition: {fileID: 11400000, guid: 7a1d3c8f0b5e4c3d9a7b6c5d4e3f2101, type: 2}
     _count: 1
-  _outputItem: {fileID: 11400000, guid: 1ccdf334567890abcdef123456789012, type: 2}
+  _outputItem: {fileID: 11400000, guid: a4df59b1308c4f48cd6f9b3fbe2d5404, type: 2}
   _outputCount: 1
   _requiresCampfire: 0
   _minimumLevel: 1

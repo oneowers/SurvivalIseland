@@ -5,6 +5,7 @@
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using MessagePipe;
+using ProjectResonance.Inventory;
 using ProjectResonance.TreeFelling;
 using UnityEngine;
 using VContainer;
@@ -26,15 +27,18 @@ namespace ProjectResonance.ResourceNodes
         private Transform _hitOrigin;
 
         private IInventoryQuery _inventoryQuery;
+        private EquippedToolDurabilityService _equippedToolDurabilityService;
         private IPublisher<ResourceHitRequestEvent> _resourceHitPublisher;
         private ResourceNodeRuntime _targetNode;
 
         [Inject]
         private void Construct(
             IInventoryQuery inventoryQuery,
+            EquippedToolDurabilityService equippedToolDurabilityService,
             IPublisher<ResourceHitRequestEvent> resourceHitPublisher)
         {
             _inventoryQuery = inventoryQuery;
+            _equippedToolDurabilityService = equippedToolDurabilityService;
             _resourceHitPublisher = resourceHitPublisher;
         }
 
@@ -109,6 +113,8 @@ namespace ProjectResonance.ResourceNodes
             }
 
             _resourceHitPublisher.Publish(new ResourceHitRequestEvent(_targetNode, hitDirection.normalized, damage));
+            Debug.Log($"[ResourceNodeInteraction] Successful resource hit request on '{_targetNode.name}'. Damage={damage}, AxeTier={axeTier}");
+            _equippedToolDurabilityService?.TryConsumeEquippedToolDurability(_targetNode.name, 1);
         }
 
         private Vector3 ResolveHitOrigin(InteractionContext context)

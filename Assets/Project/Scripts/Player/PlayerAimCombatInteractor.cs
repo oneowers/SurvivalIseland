@@ -4,6 +4,7 @@
 
 using System;
 using MessagePipe;
+using ProjectResonance.Inventory;
 using ProjectResonance.PlayerInput;
 using UnityEngine;
 using VContainer.Unity;
@@ -19,6 +20,8 @@ namespace ProjectResonance.PlayerCombat
         private readonly AimTargetingSystem _aimTargetingSystem;
         private readonly AimTargetingConfig _config;
         private readonly PlayerHitDamageResolver _damageResolver;
+        private readonly EquippedToolDurabilityService _equippedToolDurabilityService;
+        private readonly IPlayerAimModeQuery _playerAimModeQuery;
         private readonly IBufferedSubscriber<AimInput> _aimInputSubscriber;
         private readonly ISubscriber<HeavyInteractInput> _heavyInteractSubscriber;
 
@@ -42,6 +45,8 @@ namespace ProjectResonance.PlayerCombat
             AimTargetingSystem aimTargetingSystem,
             AimTargetingConfig config,
             PlayerHitDamageResolver damageResolver,
+            EquippedToolDurabilityService equippedToolDurabilityService,
+            IPlayerAimModeQuery playerAimModeQuery,
             IBufferedSubscriber<AimInput> aimInputSubscriber,
             ISubscriber<HeavyInteractInput> heavyInteractSubscriber)
         {
@@ -49,6 +54,8 @@ namespace ProjectResonance.PlayerCombat
             _aimTargetingSystem = aimTargetingSystem;
             _config = config;
             _damageResolver = damageResolver;
+            _equippedToolDurabilityService = equippedToolDurabilityService;
+            _playerAimModeQuery = playerAimModeQuery;
             _aimInputSubscriber = aimInputSubscriber;
             _heavyInteractSubscriber = heavyInteractSubscriber;
         }
@@ -120,7 +127,11 @@ namespace ProjectResonance.PlayerCombat
 
             if (_wasAimActive && !isAimActive)
             {
-                TryPerformReleaseHit();
+                if (!IsPlantingModeActive())
+                {
+                    TryPerformReleaseHit();
+                }
+
                 _lastTrackedTarget = null;
             }
 
@@ -131,6 +142,11 @@ namespace ProjectResonance.PlayerCombat
         private void OnHeavyInteract(HeavyInteractInput message)
         {
             if (_characterController == null || _aimTargetingSystem == null)
+            {
+                return;
+            }
+
+            if (IsPlantingModeActive())
             {
                 return;
             }
@@ -187,6 +203,8 @@ namespace ProjectResonance.PlayerCombat
                 resolvedHit.Damage);
 
             hitReceiver.ReceiveHit(in hitContext);
+            Debug.Log($"[PlayerAimCombatInteractor] Successful hit on '{target.name}'. Damage={resolvedHit.Damage}, AxeTier={resolvedHit.AxeTier}");
+            _equippedToolDurabilityService?.TryConsumeEquippedToolDurability(target.name, 1);
             return true;
         }
 
@@ -217,6 +235,11 @@ namespace ProjectResonance.PlayerCombat
         private float ResolveTargetAnchorHeightBias()
         {
             return _config != null ? _config.TargetAnchorHeightBias : 0.9f;
+        }
+
+        private bool IsPlantingModeActive()
+        {
+            return _playerAimModeQuery != null && _playerAimModeQuery.IsPlantingModeActive;
         }
     }
 }

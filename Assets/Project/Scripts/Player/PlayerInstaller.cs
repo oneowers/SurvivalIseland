@@ -149,6 +149,9 @@ namespace ProjectResonance.PlayerInstaller
                 builder.RegisterInstance((IInventoryQuery)new NullInventoryQuery());
             }
             builder.Register<PlayerHitDamageResolver>(Lifetime.Singleton);
+            builder.Register<PlantableResourceSpawnService>(Lifetime.Singleton);
+            builder.Register<PlantingPreviewVisualizer>(Lifetime.Singleton);
+            builder.Register<PlayerAimPlantingInteractor>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
             builder.Register<AimTargetingSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
 
             RegisterMessagePipe(builder);

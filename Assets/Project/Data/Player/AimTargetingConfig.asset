@@ -24,3 +24,6 @@ MonoBehaviour:
   _selectionFlashColor: {r: 1, g: 0.78, b: 0.28, a: 1}
   _selectionFlashDuration: 1
   _selectionFlashStrength: 0.85
+  _plantingPreviewValidColor: {r: 0.34, g: 0.92, b: 0.45, a: 0.42}
+  _plantingPreviewInvalidColor: {r: 1, g: 0.28, b: 0.22, a: 0.26}
+  _plantingPreviewHeightOffset: 0.02

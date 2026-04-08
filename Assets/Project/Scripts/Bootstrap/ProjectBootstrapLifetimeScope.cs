@@ -127,6 +127,7 @@ public sealed class ProjectBootstrapLifetimeScope : LifetimeScope
         builder.Register<IRandomProvider, UnityRandomProvider>(Lifetime.Singleton);
         EntryPointsBuilder.EnsureDispatcherRegistered(builder);
         builder.Register<InventorySystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+        builder.Register<EquippedToolDurabilityService>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
         builder.Register<IItemVisualFactory, ItemVisualFactory>(Lifetime.Singleton);
         builder.Register<ItemPickupPoolService>(Lifetime.Singleton);
         builder.Register<IMobileModeService, MobileModeService>(Lifetime.Singleton);
