@@ -29,37 +29,31 @@ namespace ProjectResonance.ResourceNodes
 
             if (definition == null)
             {
-                Debug.LogWarning("[PlantableResourceSpawnService] TrySpawn ignored because definition is null.");
                 return false;
             }
 
             if (!definition.IsResourceNode || !definition.CanPlantFromInventory)
             {
-                Debug.LogWarning($"[PlantableResourceSpawnService] TrySpawn ignored because '{definition.DisplayName}' is not plantable.");
                 return false;
             }
 
             if (!definition.TryGetPlantSpawnPrefab(out var plantSpawnPrefab))
             {
-                Debug.LogWarning($"[PlantableResourceSpawnService] TrySpawn ignored because '{definition.DisplayName}' is missing PlantSpawnPrefab.");
                 return false;
             }
 
             var lifetimeScope = ResolveResourceNodeLifetimeScope();
             if (lifetimeScope == null)
             {
-                Debug.LogWarning("[PlantableResourceSpawnService] TrySpawn failed because no active ResourceNodeLifetimeScope was found.");
                 return false;
             }
 
             spawnedObject = lifetimeScope.InstantiateResourceNode(plantSpawnPrefab, position, rotation);
             if (spawnedObject == null)
             {
-                Debug.LogWarning($"[PlantableResourceSpawnService] TrySpawn failed for '{definition.DisplayName}' because scope instantiation returned null.");
                 return false;
             }
 
-            Debug.Log($"[PlantableResourceSpawnService] Spawned '{spawnedObject.name}' for plantable resource '{definition.DisplayName}' at {position}.");
             return true;
         }
 

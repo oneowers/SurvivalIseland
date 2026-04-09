@@ -1,8 +1,7 @@
 // Path: Assets/Project/Scpripts/Player/PlayerWeightState.cs
-// Purpose: Stores runtime player carry weight as a ScriptableObject state and publishes weight changes.
-// Dependencies: MessagePipe, UnityEngine.
+// Purpose: Stores authored initial player carry weight data.
+// Dependencies: UnityEngine.
 
-using MessagePipe;
 using UnityEngine;
 
 namespace ProjectResonance.PlayerWeight
@@ -61,7 +60,7 @@ namespace ProjectResonance.PlayerWeight
     }
 
     /// <summary>
-    /// ScriptableObject runtime state for the player's carry weight.
+    /// ScriptableObject authoring data for the player's carry weight runtime.
     /// </summary>
     [CreateAssetMenu(fileName = "PlayerWeightState", menuName = "Project Resonance/Player/Player Weight State")]
     public sealed class PlayerWeightState : ScriptableObject
@@ -69,56 +68,9 @@ namespace ProjectResonance.PlayerWeight
         [SerializeField]
         private PlayerWeightType _initialWeight = PlayerWeightType.Empty;
 
-        private IBufferedPublisher<WeightChangedEvent> _publisher;
-        private PlayerWeightType _currentWeight;
-        private bool _isInitialized;
-
         /// <summary>
-        /// Gets the current runtime weight state.
+        /// Gets the authored initial player carry weight.
         /// </summary>
-        public PlayerWeightType CurrentWeight => _currentWeight;
-
-        /// <summary>
-        /// Initializes the runtime state with its event publisher.
-        /// </summary>
-        /// <param name="publisher">Buffered publisher for weight changes.</param>
-        public void Initialize(IBufferedPublisher<WeightChangedEvent> publisher)
-        {
-            _publisher = publisher;
-            _currentWeight = _initialWeight;
-            _isInitialized = true;
-
-            // The initial event synchronizes systems that subscribe after the installer finishes building the scope.
-            _publisher.Publish(new WeightChangedEvent(_currentWeight, _currentWeight));
-        }
-
-        /// <summary>
-        /// Sets the current player weight state.
-        /// </summary>
-        /// <param name="weightType">New runtime weight state.</param>
-        public void SetWeight(PlayerWeightType weightType)
-        {
-            if (!_isInitialized || _currentWeight == weightType)
-            {
-                return;
-            }
-
-            var previousWeight = _currentWeight;
-            _currentWeight = weightType;
-            _publisher.Publish(new WeightChangedEvent(previousWeight, _currentWeight));
-        }
-
-        /// <summary>
-        /// Resets the current runtime state back to the initial asset value.
-        /// </summary>
-        public void ResetState()
-        {
-            if (!_isInitialized)
-            {
-                return;
-            }
-
-            SetWeight(_initialWeight);
-        }
+        public PlayerWeightType InitialWeight => _initialWeight;
     }
 }

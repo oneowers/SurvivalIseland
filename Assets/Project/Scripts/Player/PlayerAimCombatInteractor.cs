@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scripts/Player/PlayerAimCombatInteractor.cs
 // Purpose: Rotates the player toward the selected aim target and applies hits when the mobile HIT action is pressed.
-// Dependencies: MessagePipe, UnityEngine, VContainer.Unity, ProjectResonance.PlayerInput, ProjectResonance.PlayerCombat.
+// Dependencies: UnityEngine, VContainer.Unity, ProjectResonance.PlayerInput, ProjectResonance.PlayerCombat.
 
 using System;
-using MessagePipe;
 using ProjectResonance.Inventory;
 using ProjectResonance.PlayerInput;
 using UnityEngine;
@@ -22,11 +21,8 @@ namespace ProjectResonance.PlayerCombat
         private readonly PlayerHitDamageResolver _damageResolver;
         private readonly EquippedToolDurabilityService _equippedToolDurabilityService;
         private readonly IPlayerAimModeQuery _playerAimModeQuery;
-        private readonly IBufferedSubscriber<AimInput> _aimInputSubscriber;
-        private readonly ISubscriber<HeavyInteractInput> _heavyInteractSubscriber;
+        private readonly PlayerInputHandler _playerInputHandler;
 
-        private IDisposable _aimInputSubscription;
-        private IDisposable _heavyInteractSubscription;
         private Vector2 _aimInput;
         private bool _wasAimActive;
         private AimTargetable _lastTrackedTarget;
@@ -38,8 +34,6 @@ namespace ProjectResonance.PlayerCombat
         /// <param name="aimTargetingSystem">Runtime aim targeting system.</param>
         /// <param name="config">Aim targeting config.</param>
         /// <param name="damageResolver">Outgoing hit damage resolver.</param>
-        /// <param name="aimInputSubscriber">Buffered aim input subscriber.</param>
-        /// <param name="heavyInteractSubscriber">Heavy interact subscriber used by the HIT button.</param>
         public PlayerAimCombatInteractor(
             CharacterController characterController,
             AimTargetingSystem aimTargetingSystem,
@@ -47,8 +41,7 @@ namespace ProjectResonance.PlayerCombat
             PlayerHitDamageResolver damageResolver,
             EquippedToolDurabilityService equippedToolDurabilityService,
             IPlayerAimModeQuery playerAimModeQuery,
-            IBufferedSubscriber<AimInput> aimInputSubscriber,
-            ISubscriber<HeavyInteractInput> heavyInteractSubscriber)
+            PlayerInputHandler playerInputHandler)
         {
             _characterController = characterController;
             _aimTargetingSystem = aimTargetingSystem;
@@ -56,8 +49,7 @@ namespace ProjectResonance.PlayerCombat
             _damageResolver = damageResolver;
             _equippedToolDurabilityService = equippedToolDurabilityService;
             _playerAimModeQuery = playerAimModeQuery;
-            _aimInputSubscriber = aimInputSubscriber;
-            _heavyInteractSubscriber = heavyInteractSubscriber;
+            _playerInputHandler = playerInputHandler;
         }
 
         /// <summary>
@@ -65,8 +57,14 @@ namespace ProjectResonance.PlayerCombat
         /// </summary>
         public void Start()
         {
-            _aimInputSubscription = _aimInputSubscriber.Subscribe(OnAimInputChanged);
-            _heavyInteractSubscription = _heavyInteractSubscriber.Subscribe(OnHeavyInteract);
+            if (_playerInputHandler == null)
+            {
+                return;
+            }
+
+            _aimInput = Vector2.ClampMagnitude(_playerInputHandler.CurrentAimInput, 1f);
+            _playerInputHandler.AimInputChanged += OnAimInputChanged;
+            _playerInputHandler.HeavyInteractPerformed += OnHeavyInteract;
         }
 
         /// <summary>
@@ -113,23 +111,31 @@ namespace ProjectResonance.PlayerCombat
         /// </summary>
         public void Dispose()
         {
-            _aimInputSubscription?.Dispose();
-            _aimInputSubscription = null;
+            if (_playerInputHandler == null)
+            {
+                return;
+            }
 
-            _heavyInteractSubscription?.Dispose();
-            _heavyInteractSubscription = null;
+            _playerInputHandler.AimInputChanged -= OnAimInputChanged;
+            _playerInputHandler.HeavyInteractPerformed -= OnHeavyInteract;
         }
 
         private void OnAimInputChanged(AimInput message)
         {
             var nextAimInput = Vector2.ClampMagnitude(message.Value, 1f);
             var isAimActive = nextAimInput.sqrMagnitude > ResolveSelectionDeadZone() * ResolveSelectionDeadZone();
+            var currentTarget = _aimTargetingSystem != null ? _aimTargetingSystem.CurrentTarget : null;
+
+            if (currentTarget != null)
+            {
+                _lastTrackedTarget = currentTarget;
+            }
 
             if (_wasAimActive && !isAimActive)
             {
                 if (!IsPlantingModeActive())
                 {
-                    TryPerformReleaseHit();
+                    TryPerformReleaseHit(currentTarget != null ? currentTarget : _lastTrackedTarget);
                 }
 
                 _lastTrackedTarget = null;
@@ -157,10 +163,9 @@ namespace ProjectResonance.PlayerCombat
             }
         }
 
-        private void TryPerformReleaseHit()
+        private void TryPerformReleaseHit(AimTargetable releaseTarget)
         {
-            var currentTarget = _aimTargetingSystem != null ? _aimTargetingSystem.CurrentTarget : null;
-            if (TryPerformHit(currentTarget))
+            if (TryPerformHit(releaseTarget))
             {
                 return;
             }
@@ -180,14 +185,19 @@ namespace ProjectResonance.PlayerCombat
                 return false;
             }
 
-            if (!target.TryGetHitReceiver(out var hitReceiver) || !hitReceiver.CanReceiveHit)
+            if (!target.TryGetHitReceiver(out var hitReceiver))
+            {
+                return false;
+            }
+
+            if (!hitReceiver.CanReceiveHit)
             {
                 return false;
             }
 
             var resolvedHit = _damageResolver.ResolveCurrentHit();
             var origin = _characterController.transform.position;
-            var hitDirection = target.ResolveAnchorPosition(ResolveTargetAnchorHeightBias()) - origin;
+            var hitDirection = target.ResolveDistanceReferencePosition(ResolveTargetAnchorHeightBias()) - origin;
             hitDirection.y = 0f;
 
             if (hitDirection.sqrMagnitude <= Mathf.Epsilon)
@@ -203,7 +213,6 @@ namespace ProjectResonance.PlayerCombat
                 resolvedHit.Damage);
 
             hitReceiver.ReceiveHit(in hitContext);
-            Debug.Log($"[PlayerAimCombatInteractor] Successful hit on '{target.name}'. Damage={resolvedHit.Damage}, AxeTier={resolvedHit.AxeTier}");
             _equippedToolDurabilityService?.TryConsumeEquippedToolDurability(target.name, 1);
             return true;
         }
@@ -216,7 +225,7 @@ namespace ProjectResonance.PlayerCombat
             }
 
             var origin = _characterController.transform.position;
-            var toTarget = target.ResolveAnchorPosition(ResolveTargetAnchorHeightBias()) - origin;
+            var toTarget = target.ResolveDistanceReferencePosition(ResolveTargetAnchorHeightBias()) - origin;
             toTarget.y = 0f;
             var maxRadius = _config != null ? _config.MaxAimRadius : 2f;
             return toTarget.sqrMagnitude <= maxRadius * maxRadius;

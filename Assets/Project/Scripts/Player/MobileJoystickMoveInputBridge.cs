@@ -1,9 +1,10 @@
 // Path: Assets/Project/Scripts/Player/MobileJoystickMoveInputBridge.cs
 // Purpose: Reads mobile joystick input and forwards it into the unified player input pipeline.
-// Dependencies: UnityEngine, VContainer, Joystick Pack, ProjectResonance.MobileControls, PlayerInputHandler.
+// Dependencies: UnityEngine, UnityEngine.EventSystems, VContainer, Joystick Pack, ProjectResonance.MobileControls, PlayerInputHandler.
 
 using ProjectResonance.MobileControls;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using VContainer;
 
 namespace ProjectResonance.PlayerInput
@@ -13,7 +14,7 @@ namespace ProjectResonance.PlayerInput
     /// </summary>
     [AddComponentMenu("Project Resonance/Player/Mobile Joystick Move Input Bridge")]
     [DisallowMultipleComponent]
-    public sealed class MobileJoystickMoveInputBridge : MonoBehaviour
+    public sealed class MobileJoystickMoveInputBridge : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IDragHandler
     {
         [Header("Joystick")]
         [SerializeField]
@@ -32,13 +33,16 @@ namespace ProjectResonance.PlayerInput
 
         private PlayerInputHandler _playerInputHandler;
         private MobileControlsConfig _mobileControlsConfig;
+        private IMobileModeService _mobileModeService;
         private Vector2 _lastPublishedInput = new Vector2(float.NaN, float.NaN);
+        private bool _isPointerActive;
 
         [Inject]
-        private void Construct(PlayerInputHandler playerInputHandler, MobileControlsConfig mobileControlsConfig)
+        private void Construct(PlayerInputHandler playerInputHandler, MobileControlsConfig mobileControlsConfig, IMobileModeService mobileModeService)
         {
             _playerInputHandler = playerInputHandler;
             _mobileControlsConfig = mobileControlsConfig;
+            _mobileModeService = mobileModeService;
             ApplyAuthoredDeadZone();
         }
 
@@ -64,7 +68,7 @@ namespace ProjectResonance.PlayerInput
                 return;
             }
 
-            var moveInput = ReadMoveInput();
+            var moveInput = ResolvePublishedMoveInput();
             if (AreApproximatelyEqual(_lastPublishedInput, moveInput))
             {
                 return;
@@ -74,14 +78,41 @@ namespace ProjectResonance.PlayerInput
             _playerInputHandler.SetExternalMoveInput(moveInput);
         }
 
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            _isPointerActive = true;
+        }
+
+        public void OnDrag(PointerEventData eventData)
+        {
+            _isPointerActive = true;
+        }
+
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            _isPointerActive = false;
+            ForceClearInput();
+        }
+
         private void OnDisable()
         {
+            _isPointerActive = false;
             _lastPublishedInput = new Vector2(float.NaN, float.NaN);
 
             if (_playerInputHandler != null)
             {
                 _playerInputHandler.ClearExternalMoveInput();
             }
+        }
+
+        private Vector2 ResolvePublishedMoveInput()
+        {
+            if (_mobileModeService != null && !_mobileModeService.IsMobileModeActive)
+            {
+                return Vector2.zero;
+            }
+
+            return _isPointerActive ? ReadMoveInput() : Vector2.zero;
         }
 
         private Vector2 ReadMoveInput()
@@ -119,6 +150,16 @@ namespace ProjectResonance.PlayerInput
             if (_joystick != null)
             {
                 _joystick.DeadZone = _publishDeadZone;
+            }
+        }
+
+        private void ForceClearInput()
+        {
+            _lastPublishedInput = new Vector2(float.NaN, float.NaN);
+
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.ClearExternalMoveInput();
             }
         }
     }

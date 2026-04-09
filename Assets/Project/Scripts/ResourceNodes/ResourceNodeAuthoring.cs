@@ -93,43 +93,8 @@ namespace ProjectResonance.ResourceNodes
             return _hitSounds[hitSoundIndex];
         }
 
-        /// <summary>
-        /// Builds a resource decal event from the authored definition.
-        /// </summary>
-        /// <param name="hitAnchor">Transform the decal should follow.</param>
-        /// <param name="hitsRemaining">Remaining durability after the hit.</param>
-        /// <param name="maxHits">Maximum durability of the node.</param>
-        /// <param name="resourceDecalEvent">Created decal event when successful.</param>
-        /// <returns>True when the current definition can emit a decal event.</returns>
-        public bool TryCreateDecalEvent(Transform hitAnchor, int hitsRemaining, int maxHits, out ResourceDecalEvent resourceDecalEvent)
-        {
-            var definition = ResolveResourceDefinition();
-            if (definition == null || _decalPrefab == null || hitAnchor == null)
-            {
-                resourceDecalEvent = default;
-                return false;
-            }
-
-            resourceDecalEvent = new ResourceDecalEvent(
-                hitAnchor,
-                _decalPrefab,
-                _decalSize,
-                _minDecalOpacity,
-                _maxDecalOpacity,
-                Mathf.Max(1, _decalPoolCapacity),
-                hitsRemaining,
-                maxHits);
-
-            return true;
-        }
-
         private void OnValidate()
         {
-            if (_definition != null && !_definition.IsResourceNode)
-            {
-                Debug.LogWarning($"[ResourceNodeAuthoring] '{name}' expects an ItemDefinition with ItemType=Resource. Assigned '{_definition.DisplayName}' is {_definition.ItemType}.", this);
-            }
-
             _minDecalOpacity = Mathf.Clamp01(_minDecalOpacity);
             _maxDecalOpacity = Mathf.Clamp01(_maxDecalOpacity);
             _decalPoolCapacity = Mathf.Max(1, _decalPoolCapacity);

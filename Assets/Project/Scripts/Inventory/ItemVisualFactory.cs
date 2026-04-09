@@ -104,9 +104,6 @@ namespace ProjectResonance.Inventory
 
             if (ContainsGameplayOnlyComponents(worldPrefab))
             {
-                Debug.LogWarning(
-                    $"[ItemVisualFactory] '{itemDefinition.DisplayName}' uses gameplay prefab '{worldPrefab.name}' as WorldPrefab. {usageContext} visuals require a clean visual prefab, not a resource-node prefab.",
-                    itemDefinition);
                 return false;
             }
 
@@ -116,19 +113,13 @@ namespace ProjectResonance.Inventory
                     ? _resolver.Instantiate(worldPrefab, parent, false)
                     : Object.Instantiate(worldPrefab, parent, false);
             }
-            catch (VContainerException exception)
+            catch (VContainerException)
             {
-                Debug.LogWarning(
-                    $"[ItemVisualFactory] Failed to DI-instantiate WorldPrefab '{worldPrefab.name}' for item '{ResolveDisplayName(itemDefinition)}' while creating {usageContext} visual. Assign a visual-only prefab. Exception={exception.Message}",
-                    itemDefinition);
                 instance = null;
                 return false;
             }
             catch (MissingReferenceException)
             {
-                Debug.LogWarning(
-                    $"[ItemVisualFactory] Missing WorldPrefab on item '{ResolveDisplayName(itemDefinition)}' while creating {usageContext} visual. Reassign ItemDefinition._worldPrefab.",
-                    itemDefinition);
                 instance = null;
                 return false;
             }

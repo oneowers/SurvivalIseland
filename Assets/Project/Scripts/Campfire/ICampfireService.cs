@@ -1,6 +1,8 @@
 // Path: Assets/Project/Scpripts/Campfire/ICampfireService.cs
 // Purpose: Exposes the runtime campfire state and supported gameplay actions.
-// Dependencies: UnityEngine, CampfireState.
+// Dependencies: UnityEngine.
+
+using System;
 
 using UnityEngine;
 
@@ -12,9 +14,14 @@ namespace ProjectResonance.Campfire
     public interface ICampfireService
     {
         /// <summary>
-        /// Gets the shared runtime state asset.
+        /// Gets the shared runtime state object.
         /// </summary>
-        CampfireState State { get; }
+        CampfireRuntimeState State { get; }
+
+        /// <summary>
+        /// Raised whenever the campfire fuel snapshot changes.
+        /// </summary>
+        event Action<FuelChangedEvent> FuelChanged;
 
         /// <summary>
         /// Gets whether the campfire is currently lit.

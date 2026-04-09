@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scpripts/Inventory/PlayerInventoryBridgeAdapter.cs
 // Purpose: Bridges the shared inventory system to tree-felling and campfire inventory interfaces.
-// Dependencies: MessagePipe, UnityEngine, Inventory, TreeFelling, Campfire.
+// Dependencies: UnityEngine, Inventory, TreeFelling, Campfire.
 
 using System;
-using MessagePipe;
 using ProjectResonance.Campfire;
 using ProjectResonance.TreeFelling;
 using UnityEngine;
@@ -29,34 +28,31 @@ namespace ProjectResonance.Inventory
         private ItemDefinition _firesteelItem;
 
         private InventorySystem _inventorySystem;
-        private IBufferedSubscriber<ActiveSlotChangedEvent> _activeSlotChangedSubscriber;
-
-        private IDisposable _activeSlotChangedSubscription;
         private int _activeSlotIndex;
 
         [Inject]
-        private void Construct(
-            InventorySystem inventorySystem,
-            IBufferedSubscriber<ActiveSlotChangedEvent> activeSlotChangedSubscriber)
+        private void Construct(InventorySystem inventorySystem)
         {
             _inventorySystem = inventorySystem;
-            _activeSlotChangedSubscriber = activeSlotChangedSubscriber;
         }
 
         private void Start()
         {
-            if (_activeSlotChangedSubscriber == null)
+            if (_inventorySystem == null)
             {
                 return;
             }
 
-            _activeSlotChangedSubscription = _activeSlotChangedSubscriber.Subscribe(OnActiveSlotChanged);
+            _activeSlotIndex = _inventorySystem.ActiveSlotIndex;
+            _inventorySystem.ActiveSlotChanged += OnActiveSlotChanged;
         }
 
         private void OnDestroy()
         {
-            _activeSlotChangedSubscription?.Dispose();
-            _activeSlotChangedSubscription = null;
+            if (_inventorySystem != null)
+            {
+                _inventorySystem.ActiveSlotChanged -= OnActiveSlotChanged;
+            }
         }
 
         /// <summary>

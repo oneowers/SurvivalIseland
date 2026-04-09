@@ -1,12 +1,12 @@
 // Path: Assets/Project/Scpripts/UI/Health/HealthHudPresenter.cs
 // Purpose: Renders the player's runtime HP state in the HUD.
-// Dependencies: UniTask, MessagePipe, TMPro, UnityEngine.UI, HealthHudConfig, HealthChangedMessage, VContainer.
+// Dependencies: UniTask, TMPro, UnityEngine.UI, HealthHudConfig, HealthChangedMessage, VContainer.
 
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.Common.Messages;
+using ProjectResonance.Health;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -48,12 +48,8 @@ namespace ProjectResonance.HealthUI
         [SerializeField]
         private string _depletedStatusLabel = "DEPLETED";
 
-        private IBufferedSubscriber<HealthChangedMessage> _healthChangedSubscriber;
-        private ISubscriber<HealthDepletedMessage> _healthDepletedSubscriber;
+        private IHealthService _healthService;
         private HealthHudConfig _config;
-
-        private IDisposable _healthChangedSubscription;
-        private IDisposable _healthDepletedSubscription;
         private float _targetFillNormalized = 1f;
         private float _visualFillNormalized = 1f;
         private float _damageLagNormalized = 1f;
@@ -64,13 +60,9 @@ namespace ProjectResonance.HealthUI
         private bool _isDepleted;
 
         [Inject]
-        private void Construct(
-            IBufferedSubscriber<HealthChangedMessage> healthChangedSubscriber,
-            ISubscriber<HealthDepletedMessage> healthDepletedSubscriber,
-            HealthHudConfig config)
+        private void Construct(IHealthService healthService, HealthHudConfig config)
         {
-            _healthChangedSubscriber = healthChangedSubscriber;
-            _healthDepletedSubscriber = healthDepletedSubscriber;
+            _healthService = healthService;
             _config = config;
         }
 
@@ -91,20 +83,37 @@ namespace ProjectResonance.HealthUI
 
         private void Start()
         {
-            _healthChangedSubscription = _healthChangedSubscriber.Subscribe(OnHealthChanged);
-            _healthDepletedSubscription = _healthDepletedSubscriber.Subscribe(OnHealthDepleted);
+            if (_healthService != null)
+            {
+                _currentHealth = _healthService.CurrentHealth;
+                _maxHealth = _healthService.MaxHealth;
+                _targetFillNormalized = _maxHealth > 0f ? Mathf.Clamp01(_currentHealth / _maxHealth) : 0f;
+                _visualFillNormalized = _targetFillNormalized;
+                _damageLagNormalized = _targetFillNormalized;
+                _isDepleted = !_healthService.IsAlive;
+                _healthService.HealthChanged += OnHealthChanged;
+                _healthService.HealthDepleted += OnHealthDepleted;
+            }
 
             ApplyImmediateState();
             RunVisualLoopAsync(this.GetCancellationTokenOnDestroy()).Forget();
         }
 
         /// <summary>
-        /// Disposes MessagePipe subscriptions owned by this presenter.
+        /// Disposes runtime subscriptions owned by this presenter.
         /// </summary>
         public void Dispose()
         {
-            _healthChangedSubscription?.Dispose();
-            _healthDepletedSubscription?.Dispose();
+            if (_healthService != null)
+            {
+                _healthService.HealthChanged -= OnHealthChanged;
+                _healthService.HealthDepleted -= OnHealthDepleted;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            Dispose();
         }
 
         private async UniTaskVoid RunVisualLoopAsync(CancellationToken cancellationToken)

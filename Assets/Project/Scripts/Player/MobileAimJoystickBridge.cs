@@ -1,9 +1,10 @@
 // Path: Assets/Project/Scripts/Player/MobileAimJoystickBridge.cs
 // Purpose: Reads the authored right-side mobile joystick and forwards it into the shared aim input stream.
-// Dependencies: UnityEngine, VContainer, Joystick Pack, ProjectResonance.MobileControls, PlayerInputHandler.
+// Dependencies: UnityEngine, UnityEngine.EventSystems, VContainer, Joystick Pack, ProjectResonance.MobileControls, PlayerInputHandler.
 
 using ProjectResonance.MobileControls;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using VContainer;
 
 namespace ProjectResonance.PlayerInput
@@ -13,7 +14,7 @@ namespace ProjectResonance.PlayerInput
     /// </summary>
     [AddComponentMenu("Project Resonance/Player/Mobile Aim Joystick Bridge")]
     [DisallowMultipleComponent]
-    public sealed class MobileAimJoystickBridge : MonoBehaviour
+    public sealed class MobileAimJoystickBridge : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IDragHandler
     {
         [Header("Joystick")]
         [SerializeField]
@@ -32,13 +33,16 @@ namespace ProjectResonance.PlayerInput
 
         private PlayerInputHandler _playerInputHandler;
         private MobileControlsConfig _mobileControlsConfig;
+        private IMobileModeService _mobileModeService;
         private Vector2 _lastPublishedInput = new Vector2(float.NaN, float.NaN);
+        private bool _isPointerActive;
 
         [Inject]
-        private void Construct(PlayerInputHandler playerInputHandler, MobileControlsConfig mobileControlsConfig)
+        private void Construct(PlayerInputHandler playerInputHandler, MobileControlsConfig mobileControlsConfig, IMobileModeService mobileModeService)
         {
             _playerInputHandler = playerInputHandler;
             _mobileControlsConfig = mobileControlsConfig;
+            _mobileModeService = mobileModeService;
             ApplyAuthoredDeadZone();
         }
 
@@ -64,7 +68,7 @@ namespace ProjectResonance.PlayerInput
                 return;
             }
 
-            var aimInput = ReadAimInput();
+            var aimInput = ResolvePublishedAimInput();
             if (AreApproximatelyEqual(_lastPublishedInput, aimInput))
             {
                 return;
@@ -74,14 +78,41 @@ namespace ProjectResonance.PlayerInput
             _playerInputHandler.SetExternalAimInput(aimInput);
         }
 
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            _isPointerActive = true;
+        }
+
+        public void OnDrag(PointerEventData eventData)
+        {
+            _isPointerActive = true;
+        }
+
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            _isPointerActive = false;
+            ForceClearInput();
+        }
+
         private void OnDisable()
         {
+            _isPointerActive = false;
             _lastPublishedInput = new Vector2(float.NaN, float.NaN);
 
             if (_playerInputHandler != null)
             {
                 _playerInputHandler.ClearExternalAimInput();
             }
+        }
+
+        private Vector2 ResolvePublishedAimInput()
+        {
+            if (_mobileModeService != null && !_mobileModeService.IsMobileModeActive)
+            {
+                return Vector2.zero;
+            }
+
+            return _isPointerActive ? ReadAimInput() : Vector2.zero;
         }
 
         private Vector2 ReadAimInput()
@@ -113,6 +144,16 @@ namespace ProjectResonance.PlayerInput
             if (_joystick != null)
             {
                 _joystick.DeadZone = _publishDeadZone;
+            }
+        }
+
+        private void ForceClearInput()
+        {
+            _lastPublishedInput = new Vector2(float.NaN, float.NaN);
+
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.ClearExternalAimInput();
             }
         }
     }

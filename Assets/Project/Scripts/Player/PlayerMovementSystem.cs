@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scpripts/Player/PlayerMovementSystem.cs
 // Purpose: Moves the player with CharacterController, inertia, jump, crouch and footstep events.
-// Dependencies: MessagePipe, PlayerInput, PlayerWeight, UnityEngine, VContainer.
+// Dependencies: PlayerInput, PlayerWeight, UnityEngine, VContainer.
 
 using System;
-using MessagePipe;
 using ProjectResonance.PlayerInput;
 using ProjectResonance.PlayerWeight;
 using UnityEngine;
@@ -91,6 +90,14 @@ namespace ProjectResonance.PlayerMovement
         [SerializeField]
         [Min(0.01f)]
         private float _directionChangeTime = 0.18f;
+
+        [SerializeField]
+        [Range(0f, 0.5f)]
+        private float _moveInputDeadzone = 0.18f;
+
+        [SerializeField]
+        [Min(0f)]
+        private float _stopVelocityThreshold = 0.08f;
 
         [SerializeField]
         [Min(0.01f)]
@@ -185,6 +192,16 @@ namespace ProjectResonance.PlayerMovement
         public float DirectionChangeTime => _directionChangeTime;
 
         /// <summary>
+        /// Gets the minimum move-input magnitude required before movement starts.
+        /// </summary>
+        public float MoveInputDeadzone => _moveInputDeadzone;
+
+        /// <summary>
+        /// Gets the velocity threshold below which horizontal motion is snapped to zero.
+        /// </summary>
+        public float StopVelocityThreshold => _stopVelocityThreshold;
+
+        /// <summary>
         /// Gets the rotation sharpness.
         /// </summary>
         public float RotationSharpness => _rotationSharpness;
@@ -273,21 +290,9 @@ namespace ProjectResonance.PlayerMovement
         private readonly CharacterController _characterController;
         private readonly Camera _playerCamera;
         private readonly PlayerMovementConfig _config;
-        private readonly PlayerWeightState _weightState;
-        private readonly IBufferedSubscriber<MoveInput> _moveInputSubscriber;
-        private readonly IBufferedSubscriber<SprintInput> _sprintInputSubscriber;
-        private readonly ISubscriber<JumpInput> _jumpInputSubscriber;
-        private readonly ISubscriber<CrouchInput> _crouchInputSubscriber;
-        private readonly IBufferedSubscriber<WeightChangedEvent> _weightChangedSubscriber;
-        private readonly IBufferedSubscriber<PlayerGravityPullEvent> _gravityPullSubscriber;
-        private readonly IPublisher<FootstepEvent> _footstepPublisher;
-
-        private IDisposable _moveSubscription;
-        private IDisposable _sprintSubscription;
-        private IDisposable _jumpSubscription;
-        private IDisposable _crouchSubscription;
-        private IDisposable _weightSubscription;
-        private IDisposable _gravityPullSubscription;
+        private readonly PlayerWeightRuntime _weightRuntime;
+        private readonly PlayerInputHandler _playerInputHandler;
+        private readonly PlayerMovementSignals _signals;
 
         private Vector2 _moveInput;
         private Vector3 _horizontalVelocity;
@@ -313,38 +318,23 @@ namespace ProjectResonance.PlayerMovement
         /// <param name="characterController">Player character controller.</param>
         /// <param name="playerCamera">Camera used for camera-relative movement.</param>
         /// <param name="config">Movement configuration.</param>
-        /// <param name="weightState">Runtime player weight state.</param>
-        /// <param name="moveInputSubscriber">Movement input subscriber.</param>
-        /// <param name="sprintInputSubscriber">Sprint input subscriber.</param>
-        /// <param name="jumpInputSubscriber">Jump input subscriber.</param>
-        /// <param name="crouchInputSubscriber">Crouch input subscriber.</param>
-        /// <param name="weightChangedSubscriber">Weight changed subscriber.</param>
-        /// <param name="gravityPullSubscriber">Ghost gravity pull subscriber.</param>
-        /// <param name="footstepPublisher">Footstep publisher.</param>
+        /// <param name="weightRuntime">Runtime player weight service.</param>
+        /// <param name="playerInputHandler">Shared input event source.</param>
+        /// <param name="signals">Shared movement signal service.</param>
         public PlayerMovementSystem(
             CharacterController characterController,
             Camera playerCamera,
             PlayerMovementConfig config,
-            PlayerWeightState weightState,
-            IBufferedSubscriber<MoveInput> moveInputSubscriber,
-            IBufferedSubscriber<SprintInput> sprintInputSubscriber,
-            ISubscriber<JumpInput> jumpInputSubscriber,
-            ISubscriber<CrouchInput> crouchInputSubscriber,
-            IBufferedSubscriber<WeightChangedEvent> weightChangedSubscriber,
-            IBufferedSubscriber<PlayerGravityPullEvent> gravityPullSubscriber,
-            IPublisher<FootstepEvent> footstepPublisher)
+            PlayerWeightRuntime weightRuntime,
+            PlayerInputHandler playerInputHandler,
+            PlayerMovementSignals signals)
         {
             _characterController = characterController;
             _playerCamera = playerCamera;
             _config = config;
-            _weightState = weightState;
-            _moveInputSubscriber = moveInputSubscriber;
-            _sprintInputSubscriber = sprintInputSubscriber;
-            _jumpInputSubscriber = jumpInputSubscriber;
-            _crouchInputSubscriber = crouchInputSubscriber;
-            _weightChangedSubscriber = weightChangedSubscriber;
-            _gravityPullSubscriber = gravityPullSubscriber;
-            _footstepPublisher = footstepPublisher;
+            _weightRuntime = weightRuntime;
+            _playerInputHandler = playerInputHandler;
+            _signals = signals;
         }
 
         /// <summary>
@@ -352,19 +342,32 @@ namespace ProjectResonance.PlayerMovement
         /// </summary>
         public void Start()
         {
-            _currentWeight = _weightState.CurrentWeight;
+            _currentWeight = _weightRuntime != null ? _weightRuntime.CurrentWeight : PlayerWeightType.Empty;
             _currentTargetHeight = _config.StandingHeight;
             _lastPlanarPosition = _characterController.transform.position;
             _initialControllerCenter = _characterController.center;
 
             ApplyControllerHeight(_currentTargetHeight);
 
-            _moveSubscription = _moveInputSubscriber.Subscribe(OnMoveInputChanged);
-            _sprintSubscription = _sprintInputSubscriber.Subscribe(OnSprintInputChanged);
-            _jumpSubscription = _jumpInputSubscriber.Subscribe(OnJumpRequested);
-            _crouchSubscription = _crouchInputSubscriber.Subscribe(OnCrouchRequested);
-            _weightSubscription = _weightChangedSubscriber.Subscribe(OnWeightChanged);
-            _gravityPullSubscription = _gravityPullSubscriber.Subscribe(OnGravityPullRequested);
+            if (_playerInputHandler != null)
+            {
+                _moveInput = ApplyMoveDeadzone(_playerInputHandler.CurrentMoveInput);
+                _isSprintRequested = _playerInputHandler.IsSprintPressed;
+                _playerInputHandler.MoveInputChanged += OnMoveInputChanged;
+                _playerInputHandler.SprintInputChanged += OnSprintInputChanged;
+                _playerInputHandler.JumpPerformed += OnJumpRequested;
+                _playerInputHandler.CrouchPerformed += OnCrouchRequested;
+            }
+
+            if (_weightRuntime != null)
+            {
+                _weightRuntime.WeightChanged += OnWeightChanged;
+            }
+
+            if (_signals != null)
+            {
+                _signals.GravityPullRequested += OnGravityPullRequested;
+            }
         }
 
         /// <summary>
@@ -391,17 +394,28 @@ namespace ProjectResonance.PlayerMovement
         /// </summary>
         public void Dispose()
         {
-            _moveSubscription?.Dispose();
-            _sprintSubscription?.Dispose();
-            _jumpSubscription?.Dispose();
-            _crouchSubscription?.Dispose();
-            _weightSubscription?.Dispose();
-            _gravityPullSubscription?.Dispose();
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.MoveInputChanged -= OnMoveInputChanged;
+                _playerInputHandler.SprintInputChanged -= OnSprintInputChanged;
+                _playerInputHandler.JumpPerformed -= OnJumpRequested;
+                _playerInputHandler.CrouchPerformed -= OnCrouchRequested;
+            }
+
+            if (_weightRuntime != null)
+            {
+                _weightRuntime.WeightChanged -= OnWeightChanged;
+            }
+
+            if (_signals != null)
+            {
+                _signals.GravityPullRequested -= OnGravityPullRequested;
+            }
         }
 
         private void OnMoveInputChanged(MoveInput message)
         {
-            _moveInput = Vector2.ClampMagnitude(message.Value, 1f);
+            _moveInput = ApplyMoveDeadzone(message.Value);
         }
 
         private void OnSprintInputChanged(SprintInput message)
@@ -477,6 +491,13 @@ namespace ProjectResonance.PlayerMovement
                 Mathf.Infinity,
                 deltaTime);
 
+            if (moveMagnitude <= 0.001f
+                && _horizontalVelocity.sqrMagnitude <= (_config.StopVelocityThreshold * _config.StopVelocityThreshold))
+            {
+                _horizontalVelocity = Vector3.zero;
+                _horizontalVelocitySmoothRef = Vector3.zero;
+            }
+
             if (moveDirection.sqrMagnitude > 0.0001f)
             {
                 var targetRotation = Quaternion.LookRotation(moveDirection, Vector3.up);
@@ -537,6 +558,20 @@ namespace ProjectResonance.PlayerMovement
             }
 
             return moveDirection;
+        }
+
+        private Vector2 ApplyMoveDeadzone(Vector2 input)
+        {
+            var clampedInput = Vector2.ClampMagnitude(input, 1f);
+            var magnitude = clampedInput.magnitude;
+            var deadzone = Mathf.Clamp01(_config.MoveInputDeadzone);
+            if (magnitude <= deadzone)
+            {
+                return Vector2.zero;
+            }
+
+            var normalizedMagnitude = Mathf.InverseLerp(deadzone, 1f, magnitude);
+            return clampedInput.normalized * normalizedMagnitude;
         }
 
         private float ResolveHorizontalSmoothTime(Vector3 desiredVelocity)
@@ -606,7 +641,7 @@ namespace ProjectResonance.PlayerMovement
             }
 
             _stepDistanceAccumulator = 0f;
-            _footstepPublisher.Publish(new FootstepEvent(ResolveFootstepVolume()));
+            _signals?.NotifyFootstep(new FootstepEvent(ResolveFootstepVolume()));
         }
 
         private float ResolveStepDistance()

@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scpripts/Bootstrap/ProjectBootstrapLifetimeScope.cs
-// Purpose: Registers the shared global gameplay systems, scene references, and MessagePipe brokers.
-// Dependencies: MessagePipe, VContainer, UnityEngine, Health, DayNight, Ghosts, Common.Random.
+// Purpose: Registers the shared global gameplay systems, scene references, and runtime services.
+// Dependencies: VContainer, UnityEngine, Health, DayNight, Ghosts, Common.Random.
 
 using System;
-using MessagePipe;
 using ProjectResonance.Campfire;
 using ProjectResonance.Common.Messages;
 using ProjectResonance.Common.Random;
@@ -131,12 +130,9 @@ public sealed class ProjectBootstrapLifetimeScope : LifetimeScope
         builder.Register<IItemVisualFactory, ItemVisualFactory>(Lifetime.Singleton);
         builder.Register<ItemPickupPoolService>(Lifetime.Singleton);
         builder.Register<IMobileModeService, MobileModeService>(Lifetime.Singleton);
-
-        RegisterMessagePipe(builder);
-
-        builder.RegisterEntryPoint<HealthSystem>();
-        builder.RegisterEntryPoint<DayNightSystem>();
-        builder.RegisterEntryPoint<TimeOfDayEventsSystem>();
+        builder.Register<HealthSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+        builder.Register<DayNightSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+        builder.Register<TimeOfDayEventsSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
 
         builder.RegisterBuildCallback(container =>
         {
@@ -192,63 +188,6 @@ public sealed class ProjectBootstrapLifetimeScope : LifetimeScope
         }
 
         return _runtimeWorldItemPickupConfig;
-    }
-
-    private void RegisterMessagePipe(IContainerBuilder builder)
-    {
-        var messagePipeBuilder = new BuiltinContainerBuilder();
-        messagePipeBuilder.AddMessagePipe();
-        messagePipeBuilder.AddMessageBroker<FuelChangedEvent>();
-        messagePipeBuilder.AddMessageBroker<HealthChangedMessage>();
-        messagePipeBuilder.AddMessageBroker<HealthDepletedMessage>();
-        messagePipeBuilder.AddMessageBroker<PlayerInSafeZoneEvent>();
-        messagePipeBuilder.AddMessageBroker<TimeTickEvent>();
-        messagePipeBuilder.AddMessageBroker<TimeOfDayChangedEvent>();
-        messagePipeBuilder.AddMessageBroker<SunsetWarningEvent>();
-        messagePipeBuilder.AddMessageBroker<ThermalDamageEvent>();
-        messagePipeBuilder.AddMessageBroker<ThermalHealEvent>();
-        messagePipeBuilder.AddMessageBroker<BirdsStartSingingEvent>();
-        messagePipeBuilder.AddMessageBroker<BirdsStopSingingEvent>();
-        messagePipeBuilder.AddMessageBroker<GhostsActivateEvent>();
-        messagePipeBuilder.AddMessageBroker<GhostsDeactivateEvent>();
-        messagePipeBuilder.AddMessageBroker<LordWraithSpawnRequestEvent>();
-        messagePipeBuilder.AddMessageBroker<PlayerGravityPullEvent>();
-        messagePipeBuilder.AddMessageBroker<InventoryChangedEvent>();
-        messagePipeBuilder.AddMessageBroker<ActiveSlotChangedEvent>();
-
-        var serviceProvider = messagePipeBuilder.BuildServiceProvider();
-
-        RegisterBufferedMessage<FuelChangedEvent>(builder, serviceProvider);
-        RegisterBufferedMessage<HealthChangedMessage>(builder, serviceProvider);
-        RegisterMessage<HealthDepletedMessage>(builder, serviceProvider);
-        RegisterBufferedMessage<PlayerInSafeZoneEvent>(builder, serviceProvider);
-        RegisterBufferedMessage<TimeTickEvent>(builder, serviceProvider);
-        RegisterBufferedMessage<TimeOfDayChangedEvent>(builder, serviceProvider);
-        RegisterMessage<SunsetWarningEvent>(builder, serviceProvider);
-        RegisterMessage<ThermalDamageEvent>(builder, serviceProvider);
-        RegisterMessage<ThermalHealEvent>(builder, serviceProvider);
-        RegisterMessage<BirdsStartSingingEvent>(builder, serviceProvider);
-        RegisterMessage<BirdsStopSingingEvent>(builder, serviceProvider);
-        RegisterMessage<GhostsActivateEvent>(builder, serviceProvider);
-        RegisterMessage<GhostsDeactivateEvent>(builder, serviceProvider);
-        RegisterMessage<LordWraithSpawnRequestEvent>(builder, serviceProvider);
-        RegisterBufferedMessage<PlayerGravityPullEvent>(builder, serviceProvider);
-        RegisterBufferedMessage<InventoryChangedEvent>(builder, serviceProvider);
-        RegisterBufferedMessage<ActiveSlotChangedEvent>(builder, serviceProvider);
-    }
-
-    private void RegisterMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)
-    {
-        builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
-        builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
-    }
-
-    private void RegisterBufferedMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)
-    {
-        builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
-        builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
-        builder.RegisterInstance((IBufferedPublisher<TMessage>)serviceProvider.GetService(typeof(IBufferedPublisher<TMessage>)));
-        builder.RegisterInstance((IBufferedSubscriber<TMessage>)serviceProvider.GetService(typeof(IBufferedSubscriber<TMessage>)));
     }
 
     private MobileControlsConfig ResolveMobileControlsConfig()

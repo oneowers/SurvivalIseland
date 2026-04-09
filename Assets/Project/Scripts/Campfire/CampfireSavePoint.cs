@@ -1,10 +1,9 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireSavePoint.cs
 // Purpose: Provides campfire save-point behavior, sleep requests and upgrade menu handling.
-// Dependencies: UniTask, MessagePipe, UnityEngine, VContainer, CampfireSystem, IDayNightService.
+// Dependencies: UniTask, UnityEngine, VContainer, CampfireSystem, IDayNightService.
 
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.DayNight;
 using UnityEngine;
 using VContainer;
@@ -109,13 +108,16 @@ namespace ProjectResonance.Campfire
         private ICampfireService _campfireService;
         private IRespawnService _respawnService;
         private ICampfireMenuPresenter _menuPresenter;
-        private IPublisher<SleepRequestEvent> _sleepRequestPublisher;
         private IDayNightService _dayNightService;
+
+        /// <summary>
+        /// Raised when the player chooses to sleep at this campfire.
+        /// </summary>
+        public event System.Action<SleepRequestEvent> SleepRequested;
 
         [Inject]
         private void Construct(
             ICampfireService campfireService,
-            IPublisher<SleepRequestEvent> sleepRequestPublisher,
             IDayNightService dayNightService,
             IRespawnService respawnService = null,
             ICampfireMenuPresenter menuPresenter = null)
@@ -123,7 +125,6 @@ namespace ProjectResonance.Campfire
             _campfireService = campfireService;
             _respawnService = respawnService;
             _menuPresenter = menuPresenter;
-            _sleepRequestPublisher = sleepRequestPublisher;
             _dayNightService = dayNightService;
         }
 
@@ -151,7 +152,7 @@ namespace ProjectResonance.Campfire
             {
                 case CampfireMenuSelection.Sleep:
                     _dayNightService?.SkipToMorning();
-                    _sleepRequestPublisher?.Publish(new SleepRequestEvent(this));
+                    SleepRequested?.Invoke(new SleepRequestEvent(this));
                     break;
                 case CampfireMenuSelection.Upgrade:
                     _campfireService?.TryUpgrade();

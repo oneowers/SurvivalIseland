@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scripts/Inventory/EquippedToolDurabilityService.cs
 // Purpose: Tracks the active inventory slot and consumes durability on the equipped tool after successful hits.
-// Dependencies: MessagePipe, VContainer.Unity, UnityEngine, ProjectResonance.Inventory.
+// Dependencies: VContainer.Unity, UnityEngine, ProjectResonance.Inventory.
 
 using System;
-using MessagePipe;
 using UnityEngine;
 using VContainer.Unity;
 
@@ -15,22 +14,16 @@ namespace ProjectResonance.Inventory
     public sealed class EquippedToolDurabilityService : IStartable, IDisposable
     {
         private readonly InventorySystem _inventorySystem;
-        private readonly IBufferedSubscriber<ActiveSlotChangedEvent> _activeSlotChangedSubscriber;
-
-        private IDisposable _activeSlotChangedSubscription;
         private int _activeSlotIndex;
 
         /// <summary>
         /// Creates the equipped tool durability service.
         /// </summary>
         /// <param name="inventorySystem">Shared inventory runtime.</param>
-        /// <param name="activeSlotChangedSubscriber">Buffered active-slot subscriber.</param>
         public EquippedToolDurabilityService(
-            InventorySystem inventorySystem,
-            IBufferedSubscriber<ActiveSlotChangedEvent> activeSlotChangedSubscriber)
+            InventorySystem inventorySystem)
         {
             _inventorySystem = inventorySystem;
-            _activeSlotChangedSubscriber = activeSlotChangedSubscriber;
         }
 
         /// <summary>
@@ -38,12 +31,13 @@ namespace ProjectResonance.Inventory
         /// </summary>
         public void Start()
         {
-            if (_activeSlotChangedSubscriber == null)
+            if (_inventorySystem == null)
             {
                 return;
             }
 
-            _activeSlotChangedSubscription = _activeSlotChangedSubscriber.Subscribe(OnActiveSlotChanged);
+            _activeSlotIndex = _inventorySystem.ActiveSlotIndex;
+            _inventorySystem.ActiveSlotChanged += OnActiveSlotChanged;
         }
 
         /// <summary>
@@ -51,8 +45,10 @@ namespace ProjectResonance.Inventory
         /// </summary>
         public void Dispose()
         {
-            _activeSlotChangedSubscription?.Dispose();
-            _activeSlotChangedSubscription = null;
+            if (_inventorySystem != null)
+            {
+                _inventorySystem.ActiveSlotChanged -= OnActiveSlotChanged;
+            }
         }
 
         /// <summary>
@@ -71,7 +67,6 @@ namespace ProjectResonance.Inventory
             var activeSlot = _inventorySystem.GetSlot(_activeSlotIndex);
             if (activeSlot.IsEmpty)
             {
-                Debug.LogWarning($"[EquippedToolDurabilityService] Successful hit on '{targetName}' but the active slot is empty. Bare-hands damage was used.");
                 return false;
             }
 
@@ -83,7 +78,6 @@ namespace ProjectResonance.Inventory
 
             if (!equippedToolDefinition.UsesDurability)
             {
-                Debug.Log($"[EquippedToolDurabilityService] Successful hit on '{targetName}' with '{equippedToolDefinition.DisplayName}'. Durability is disabled for this tool.");
                 return false;
             }
 

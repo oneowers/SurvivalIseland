@@ -1,6 +1,6 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireLightController.cs
 // Purpose: Drives point-light flicker, dying-state blinking and extinguish fade for the campfire while exposing it as a ghost light source.
-// Dependencies: UniTask, Common.Random, CampfireState, ILightSource, UnityEngine, VContainer.
+// Dependencies: UniTask, Common.Random, ILightSource, UnityEngine, VContainer.
 
 using System.Threading;
 using Cysharp.Threading.Tasks;
@@ -61,7 +61,7 @@ namespace ProjectResonance.Campfire
         [Range(0f, 1f)]
         private float _minimumFuelIntensityMultiplier = 0.35f;
 
-        private CampfireState _campfireState;
+        private ICampfireService _campfireService;
         private CampfireAnchor _campfireAnchor;
         private IRandomProvider _randomProvider;
         private float _baseIntensity;
@@ -79,30 +79,30 @@ namespace ProjectResonance.Campfire
         {
             get
             {
-                if (_campfireState == null || !_campfireState.IsLit)
+                if (_campfireService == null || !_campfireService.IsLit)
                 {
                     return 0f;
                 }
 
-                var levelIntensity = _campfireState.Level == CampfireLevel.Basic
+                var levelIntensity = _campfireService.Level == CampfireLevel.Basic
                     ? 0.45f
-                    : _campfireState.Level == CampfireLevel.Reinforced
+                    : _campfireService.Level == CampfireLevel.Reinforced
                         ? 0.8f
                         : 1f;
 
-                return Mathf.Clamp01(levelIntensity * Mathf.Lerp(_minimumFuelIntensityMultiplier, 1f, _campfireState.CurrentFuelNormalized));
+                return Mathf.Clamp01(levelIntensity * Mathf.Lerp(_minimumFuelIntensityMultiplier, 1f, _campfireService.State.CurrentFuelNormalized));
             }
         }
 
         /// <summary>
         /// Gets whether the campfire is currently emitting light.
         /// </summary>
-        public bool IsEmittingLight => _campfireState != null && _campfireState.IsLit;
+        public bool IsEmittingLight => _campfireService != null && _campfireService.IsLit;
 
         [Inject]
-        private void Construct(CampfireState campfireState, IRandomProvider randomProvider, CampfireAnchor campfireAnchor = null)
+        private void Construct(ICampfireService campfireService, IRandomProvider randomProvider, CampfireAnchor campfireAnchor = null)
         {
-            _campfireState = campfireState;
+            _campfireService = campfireService;
             _randomProvider = randomProvider;
             _campfireAnchor = campfireAnchor;
         }
@@ -133,7 +133,7 @@ namespace ProjectResonance.Campfire
                 return;
             }
 
-            var wasLit = _campfireState != null && _campfireState.IsLit;
+            var wasLit = _campfireService != null && _campfireService.IsLit;
             UpdateEmbersState(wasLit);
 
             if (!wasLit)
@@ -144,20 +144,20 @@ namespace ProjectResonance.Campfire
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                if (_campfireState == null)
+                if (_campfireService == null)
                 {
                     await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
                     continue;
                 }
 
-                if (_campfireState.IsLit)
+                if (_campfireService.IsLit)
                 {
                     wasLit = true;
                     UpdateEmbersState(true);
                     ApplyFlickerSample();
 
                     await UniTask.Delay(
-                        (int)((_campfireState.IsDying ? _dyingFlickerIntervalSeconds : _normalFlickerIntervalSeconds) * 1000f),
+                        (int)((_campfireService.IsDying ? _dyingFlickerIntervalSeconds : _normalFlickerIntervalSeconds) * 1000f),
                         DelayType.DeltaTime,
                         PlayerLoopTiming.Update,
                         cancellationToken);
@@ -195,12 +195,12 @@ namespace ProjectResonance.Campfire
 
             _pointLight.enabled = true;
 
-            var normalizedFuel = _campfireState.CurrentFuelNormalized;
+            var normalizedFuel = _campfireService.State.CurrentFuelNormalized;
             var baseIntensityMultiplier = Mathf.Lerp(_minimumFuelIntensityMultiplier, 1f, normalizedFuel);
-            var intensityJitter = _campfireState.IsDying ? _dyingIntensityJitter : _normalIntensityJitter;
-            var rangeJitter = _campfireState.IsDying ? _dyingRangeJitter : _normalRangeJitter;
+            var intensityJitter = _campfireService.IsDying ? _dyingIntensityJitter : _normalIntensityJitter;
+            var rangeJitter = _campfireService.IsDying ? _dyingRangeJitter : _normalRangeJitter;
 
-            if (_campfireState.IsDying)
+            if (_campfireService.IsDying)
             {
                 baseIntensityMultiplier *= _dyingBaseIntensityMultiplier;
             }
@@ -209,7 +209,7 @@ namespace ProjectResonance.Campfire
             var rangeOffset = _randomProvider.Range(-rangeJitter, rangeJitter);
 
             _pointLight.intensity = Mathf.Max(0f, (_baseIntensity * baseIntensityMultiplier) + (_baseIntensity * intensityOffset));
-            _pointLight.range = Mathf.Max(0f, _campfireState.LightRadius + (_baseRange * rangeOffset));
+            _pointLight.range = Mathf.Max(0f, _campfireService.LightRadius + (_baseRange * rangeOffset));
         }
 
         private async UniTask FadeOutAsync(CancellationToken cancellationToken)
@@ -223,7 +223,9 @@ namespace ProjectResonance.Campfire
             var startRange = _pointLight.range;
             var elapsed = 0f;
 
-            while (elapsed < _extinguishFadeDurationSeconds && !_campfireState.IsLit && !cancellationToken.IsCancellationRequested)
+            while (elapsed < _extinguishFadeDurationSeconds
+                   && (_campfireService == null || !_campfireService.IsLit)
+                   && !cancellationToken.IsCancellationRequested)
             {
                 elapsed += Time.deltaTime;
                 var t = _extinguishFadeDurationSeconds > 0f ? Mathf.Clamp01(elapsed / _extinguishFadeDurationSeconds) : 1f;
@@ -234,7 +236,7 @@ namespace ProjectResonance.Campfire
                 await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
             }
 
-            if (!_campfireState.IsLit)
+            if (_campfireService == null || !_campfireService.IsLit)
             {
                 _pointLight.enabled = false;
                 _pointLight.intensity = 0f;

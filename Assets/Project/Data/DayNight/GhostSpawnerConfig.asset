@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _paleDriftPrefab: {fileID: 100005, guid: 4b001a9de943476ebcc2ccb0d307dde7, type: 3}
   _lordWraithPrefab: {fileID: 200005, guid: 9ca7e62cdfb4406b89f78294f3149998, type: 3}
-  _basePaleDriftCount: 3
+  _basePaleDriftCount: 8
   _paleDriftPerDay: 1
   _maxPaleDrifts: 8
   _minSpawnDistanceFromPlayer: 20

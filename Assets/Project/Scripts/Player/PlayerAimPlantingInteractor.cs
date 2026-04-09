@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scripts/Player/PlayerAimPlantingInteractor.cs
 // Purpose: Converts right-stick aim into snapped ground planting when a plantable resource item is selected in the active inventory slot.
-// Dependencies: MessagePipe, UnityEngine, VContainer.Unity, ProjectResonance.Inventory, ProjectResonance.PlayerInput, ProjectResonance.ResourceNodes.
+// Dependencies: UnityEngine, VContainer.Unity, ProjectResonance.Inventory, ProjectResonance.PlayerInput, ProjectResonance.ResourceNodes.
 
 using System;
-using MessagePipe;
 using ProjectResonance.Inventory;
 using ProjectResonance.PlayerInput;
 using ProjectResonance.ResourceNodes;
@@ -107,22 +106,15 @@ namespace ProjectResonance.PlayerCombat
         private readonly InventorySystem _inventorySystem;
         private readonly PlantableResourceSpawnService _spawnService;
         private readonly PlantingPreviewVisualizer _plantingPreviewVisualizer;
-        private readonly IBufferedSubscriber<AimInput> _aimInputSubscriber;
-        private readonly IBufferedSubscriber<ActiveSlotChangedEvent> _activeSlotChangedSubscriber;
+        private readonly PlayerInputHandler _playerInputHandler;
 
-        private IDisposable _aimInputSubscription;
-        private IDisposable _activeSlotChangedSubscription;
         private Collider[] _overlapResults;
         private Vector2 _aimInput;
         private int _activeSlotIndex;
         private bool _wasAimActive;
         private bool _lastLoggedPlantingMode;
         private bool _hasCandidate;
-        private bool _hasLoggedCandidate;
-        private bool _lastLoggedCandidateValid;
         private PlantingCandidate _currentCandidate;
-        private Vector3 _lastLoggedSnappedPoint;
-        private PlantingFailureReason _lastLoggedFailureReason;
 
         /// <summary>
         /// Creates the player planting interactor.
@@ -133,8 +125,6 @@ namespace ProjectResonance.PlayerCombat
         /// <param name="inventorySystem">Shared player inventory.</param>
         /// <param name="spawnService">Plantable resource spawn bridge.</param>
         /// <param name="plantingPreviewVisualizer">World-space preview visualizer for planting candidates.</param>
-        /// <param name="aimInputSubscriber">Buffered aim input subscriber.</param>
-        /// <param name="activeSlotChangedSubscriber">Buffered active-slot subscriber.</param>
         public PlayerAimPlantingInteractor(
             CharacterController characterController,
             Camera playerCamera,
@@ -142,8 +132,7 @@ namespace ProjectResonance.PlayerCombat
             InventorySystem inventorySystem,
             PlantableResourceSpawnService spawnService,
             PlantingPreviewVisualizer plantingPreviewVisualizer,
-            IBufferedSubscriber<AimInput> aimInputSubscriber,
-            IBufferedSubscriber<ActiveSlotChangedEvent> activeSlotChangedSubscriber)
+            PlayerInputHandler playerInputHandler)
         {
             _characterController = characterController;
             _playerCamera = playerCamera;
@@ -151,8 +140,7 @@ namespace ProjectResonance.PlayerCombat
             _inventorySystem = inventorySystem;
             _spawnService = spawnService;
             _plantingPreviewVisualizer = plantingPreviewVisualizer;
-            _aimInputSubscriber = aimInputSubscriber;
-            _activeSlotChangedSubscriber = activeSlotChangedSubscriber;
+            _playerInputHandler = playerInputHandler;
         }
 
         /// <summary>
@@ -166,13 +154,24 @@ namespace ProjectResonance.PlayerCombat
         public void Start()
         {
             _overlapResults = new Collider[Mathf.Max(1, _aimTargetingConfig != null ? _aimTargetingConfig.MaxDetectedColliders : 32)];
-            _aimInputSubscription = _aimInputSubscriber.Subscribe(OnAimInputChanged);
-            _activeSlotChangedSubscription = _activeSlotChangedSubscriber.Subscribe(OnActiveSlotChanged);
+            _activeSlotIndex = _inventorySystem != null ? _inventorySystem.ActiveSlotIndex : 0;
+
+            if (_playerInputHandler != null)
+            {
+                _aimInput = Vector2.ClampMagnitude(_playerInputHandler.CurrentAimInput, 1f);
+                _playerInputHandler.AimInputChanged += OnAimInputChanged;
+            }
+
+            if (_inventorySystem != null)
+            {
+                _inventorySystem.ActiveSlotChanged += OnActiveSlotChanged;
+            }
+
             RefreshPlantingModeLog();
         }
 
         /// <summary>
-        /// Updates the current planting candidate and debug feedback.
+        /// Updates the current planting candidate and planting preview feedback.
         /// </summary>
         public void LateTick()
         {
@@ -188,8 +187,6 @@ namespace ProjectResonance.PlayerCombat
             var plantableDefinition = ResolveSelectedPlantableDefinition();
             _currentCandidate = EvaluateCandidate(plantableDefinition);
             _hasCandidate = true;
-            LogCandidateIfChanged();
-            DrawDebugCandidate();
             _plantingPreviewVisualizer?.Show(plantableDefinition, _currentCandidate);
         }
 
@@ -198,10 +195,16 @@ namespace ProjectResonance.PlayerCombat
         /// </summary>
         public void Dispose()
         {
-            _aimInputSubscription?.Dispose();
-            _aimInputSubscription = null;
-            _activeSlotChangedSubscription?.Dispose();
-            _activeSlotChangedSubscription = null;
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.AimInputChanged -= OnAimInputChanged;
+            }
+
+            if (_inventorySystem != null)
+            {
+                _inventorySystem.ActiveSlotChanged -= OnActiveSlotChanged;
+            }
+
             _plantingPreviewVisualizer?.Dispose();
         }
 
@@ -244,22 +247,16 @@ namespace ProjectResonance.PlayerCombat
 
             if (!_currentCandidate.IsValid)
             {
-                Debug.LogWarning(
-                    $"[PlayerAimPlantingInteractor] Planting aborted for '{plantableDefinition.DisplayName}'. Reason={_currentCandidate.FailureReason}, Candidate={_currentCandidate.SnappedPoint}");
                 return;
             }
 
             if (!_spawnService.TrySpawn(plantableDefinition, _currentCandidate.PlacementPosition, Quaternion.identity, out var spawnedObject))
             {
-                Debug.LogWarning($"[PlayerAimPlantingInteractor] Planting spawn failed for '{plantableDefinition.DisplayName}' at {_currentCandidate.PlacementPosition}.");
                 return;
             }
 
             if (!_inventorySystem.TryConsumeItemAt(_activeSlotIndex, 1))
             {
-                Debug.LogWarning(
-                    $"[PlayerAimPlantingInteractor] Planting rollback triggered because active slot {_activeSlotIndex} no longer contained '{plantableDefinition.DisplayName}'.");
-
                 if (spawnedObject != null)
                 {
                     UnityEngine.Object.Destroy(spawnedObject);
@@ -267,10 +264,6 @@ namespace ProjectResonance.PlayerCombat
 
                 return;
             }
-
-            var remainingCount = _inventorySystem.GetSlot(_activeSlotIndex).Count;
-            Debug.Log(
-                $"[PlayerAimPlantingInteractor] Planted '{plantableDefinition.NodeDisplayName}' at {_currentCandidate.PlacementPosition}. RemainingLogsInActiveSlot={remainingCount}, Slot={_activeSlotIndex}");
         }
 
         private PlantingCandidate EvaluateCandidate(ItemDefinition definition)
@@ -387,48 +380,6 @@ namespace ProjectResonance.PlayerCombat
                 Mathf.Round(desiredPoint.z));
         }
 
-        private void LogCandidateIfChanged()
-        {
-            if (!_hasCandidate)
-            {
-                return;
-            }
-
-            var candidateChanged = !_hasLoggedCandidate
-                || _lastLoggedCandidateValid != _currentCandidate.IsValid
-                || _lastLoggedFailureReason != _currentCandidate.FailureReason
-                || (_lastLoggedSnappedPoint - _currentCandidate.SnappedPoint).sqrMagnitude > 0.0001f;
-
-            if (!candidateChanged)
-            {
-                return;
-            }
-
-            _hasLoggedCandidate = true;
-            _lastLoggedCandidateValid = _currentCandidate.IsValid;
-            _lastLoggedSnappedPoint = _currentCandidate.SnappedPoint;
-            _lastLoggedFailureReason = _currentCandidate.FailureReason;
-
-            if (_currentCandidate.IsValid)
-            {
-                Debug.Log(
-                    $"[PlayerAimPlantingInteractor] Valid planting candidate at {_currentCandidate.PlacementPosition} from snapped point {_currentCandidate.SnappedPoint}.");
-                return;
-            }
-
-            Debug.LogWarning(
-                $"[PlayerAimPlantingInteractor] Invalid planting candidate. Reason={_currentCandidate.FailureReason}, SnappedPoint={_currentCandidate.SnappedPoint}");
-        }
-
-        private void DrawDebugCandidate()
-        {
-            var debugColor = _currentCandidate.IsValid ? Color.green : Color.red;
-            var playerOrigin = _characterController.transform.position + (Vector3.up * 0.9f);
-            Debug.DrawLine(playerOrigin, _currentCandidate.ProbeOrigin, debugColor);
-            Debug.DrawLine(_currentCandidate.ProbeOrigin, _currentCandidate.PlacementPosition, debugColor);
-            Debug.DrawRay(_currentCandidate.PlacementPosition, Vector3.up * 0.75f, debugColor);
-        }
-
         private void RefreshPlantingModeLog()
         {
             var isPlantingModeActive = IsPlantingModeActive;
@@ -438,17 +389,6 @@ namespace ProjectResonance.PlayerCombat
             }
 
             _lastLoggedPlantingMode = isPlantingModeActive;
-            _hasLoggedCandidate = false;
-
-            if (isPlantingModeActive)
-            {
-                var definition = ResolveSelectedPlantableDefinition();
-                Debug.Log(
-                    $"[PlayerAimPlantingInteractor] Entered planting mode. Item={(definition != null ? definition.DisplayName : "null")}, Slot={_activeSlotIndex}");
-                return;
-            }
-
-            Debug.Log("[PlayerAimPlantingInteractor] Exited planting mode.");
         }
 
         private ItemDefinition ResolveSelectedPlantableDefinition()

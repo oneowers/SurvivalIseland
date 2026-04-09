@@ -1,10 +1,7 @@
 // Path: Assets/Project/Scripts/ResourceNodes/ResourceNodeLifetimeScope.cs
 // Purpose: Registers the generic resource-node gameplay module in VContainer and injects existing authored resource nodes in the scene.
-// Dependencies: MessagePipe, VContainer, UnityEngine, ProjectResonance.ResourceNodes, ProjectResonance.TreeFelling, ProjectResonance.PlayerWeight.
+// Dependencies: VContainer, UnityEngine, ProjectResonance.ResourceNodes, ProjectResonance.TreeFelling.
 
-using System;
-using MessagePipe;
-using ProjectResonance.PlayerWeight;
 using ProjectResonance.TreeFelling;
 using UnityEngine;
 using VContainer;
@@ -19,14 +16,6 @@ namespace ProjectResonance.ResourceNodes
     [DisallowMultipleComponent]
     public sealed class ResourceNodeLifetimeScope : LifetimeScope
     {
-        [Header("Debug")]
-        [SerializeField]
-        private bool _enableDebugLogs = true;
-
-        [Header("Adapters")]
-        [SerializeField]
-        private PlayerWeightState _playerWeightState;
-
         [SerializeField]
         private MonoBehaviour _inventoryBridgeSource;
 
@@ -39,16 +28,6 @@ namespace ProjectResonance.ResourceNodes
         /// <param name="builder">Current container builder.</param>
         protected override void Configure(IContainerBuilder builder)
         {
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[ResourceNodeLifetimeScope] Configure started. PlayerWeightAssigned={_playerWeightState != null}, InventoryBridgeAssigned={_inventoryBridgeSource != null}", this);
-            }
-
-            if (_playerWeightState != null)
-            {
-                builder.RegisterInstance(_playerWeightState);
-            }
-
             if (_inventoryBridgeSource is IInventoryQuery inventoryQuery)
             {
                 builder.RegisterInstance(inventoryQuery);
@@ -64,37 +43,11 @@ namespace ProjectResonance.ResourceNodes
                 builder.RegisterComponent(_playerCarryAnchorAdapter).As<IPlayerCarryAnchor>();
             }
 
-            RegisterMessagePipe(builder);
-
             builder.RegisterBuildCallback(container =>
             {
                 container.InjectGameObject(gameObject);
                 InjectExistingResourceNodes(container);
-
-                if (_enableDebugLogs)
-                {
-                    Debug.Log("[ResourceNodeLifetimeScope] Build callback completed. Existing resource nodes were injected.", this);
-                }
             });
-        }
-
-        private void RegisterMessagePipe(IContainerBuilder builder)
-        {
-            var messagePipeBuilder = new BuiltinContainerBuilder();
-            messagePipeBuilder.AddMessagePipe();
-            messagePipeBuilder.AddMessageBroker<ResourceHitRequestEvent>();
-            messagePipeBuilder.AddMessageBroker<ResourceHitEvent>();
-            messagePipeBuilder.AddMessageBroker<ResourceDestroyedEvent>();
-            messagePipeBuilder.AddMessageBroker<SoundEvent>();
-            messagePipeBuilder.AddMessageBroker<ParticleEvent>();
-
-            var serviceProvider = messagePipeBuilder.BuildServiceProvider();
-
-            RegisterMessage<ResourceHitRequestEvent>(builder, serviceProvider);
-            RegisterMessage<ResourceHitEvent>(builder, serviceProvider);
-            RegisterMessage<ResourceDestroyedEvent>(builder, serviceProvider);
-            RegisterMessage<SoundEvent>(builder, serviceProvider);
-            RegisterMessage<ParticleEvent>(builder, serviceProvider);
         }
 
         private void InjectExistingResourceNodes(IObjectResolver container)
@@ -110,12 +63,6 @@ namespace ProjectResonance.ResourceNodes
             }
         }
 
-        private void RegisterMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)
-        {
-            builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
-            builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
-        }
-
         /// <summary>
         /// Instantiates a resource-node prefab through the resource-node scope so all gameplay dependencies are injected.
         /// </summary>
@@ -127,13 +74,11 @@ namespace ProjectResonance.ResourceNodes
         {
             if (prefab == null)
             {
-                Debug.LogWarning("[ResourceNodeLifetimeScope] InstantiateResourceNode ignored because prefab is null.", this);
                 return null;
             }
 
             if (Container == null)
             {
-                Debug.LogWarning("[ResourceNodeLifetimeScope] InstantiateResourceNode ignored because Container is not ready yet.", this);
                 return null;
             }
 

@@ -82,7 +82,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1a3bb004919e74427a8cb5caee7c29b5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _enableDebugLogs: 1
   _hitPoints: []
 --- !u!114 &5297273653301827331
 MonoBehaviour:
@@ -96,7 +95,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 103675ce04ce24be59db4c335e719813, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _enableDebugLogs: 1
   _hitOrigin: {fileID: 1685090617436309023}
 --- !u!114 &2437329719174962364
 MonoBehaviour:

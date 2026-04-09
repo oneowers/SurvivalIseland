@@ -1,10 +1,9 @@
 // Path: Assets/Project/Scripts/ResourceNodes/ResourceNodeInteraction.cs
-// Purpose: Converts player interaction input into generic resource hit requests for any authored resource node.
-// Dependencies: UniTask, MessagePipe, UnityEngine, VContainer, ProjectResonance.TreeFelling, ProjectResonance.ResourceNodes.
+// Purpose: Converts player interaction input into direct resource hits for any authored resource node.
+// Dependencies: UniTask, UnityEngine, VContainer, ProjectResonance.TreeFelling, ProjectResonance.ResourceNodes.
 
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.Inventory;
 using ProjectResonance.TreeFelling;
 using UnityEngine;
@@ -21,25 +20,19 @@ namespace ProjectResonance.ResourceNodes
     public sealed class ResourceNodeInteraction : MonoBehaviour, IInteractable
     {
         [SerializeField]
-        private bool _enableDebugLogs = true;
-
-        [SerializeField]
         private Transform _hitOrigin;
 
         private IInventoryQuery _inventoryQuery;
         private EquippedToolDurabilityService _equippedToolDurabilityService;
-        private IPublisher<ResourceHitRequestEvent> _resourceHitPublisher;
         private ResourceNodeRuntime _targetNode;
 
         [Inject]
         private void Construct(
             IInventoryQuery inventoryQuery,
-            EquippedToolDurabilityService equippedToolDurabilityService,
-            IPublisher<ResourceHitRequestEvent> resourceHitPublisher)
+            EquippedToolDurabilityService equippedToolDurabilityService)
         {
             _inventoryQuery = inventoryQuery;
             _equippedToolDurabilityService = equippedToolDurabilityService;
-            _resourceHitPublisher = resourceHitPublisher;
         }
 
         /// <summary>
@@ -78,22 +71,12 @@ namespace ProjectResonance.ResourceNodes
 
             if (_targetNode == null || _targetNode.IsDestroyed)
             {
-                if (_enableDebugLogs)
-                {
-                    Debug.LogWarning($"[ResourceNodeInteraction] Hit ignored. TargetAssigned={_targetNode != null}, IsDestroyed={(_targetNode != null && _targetNode.IsDestroyed)}", this);
-                }
-
                 return;
             }
 
             var axeTier = _inventoryQuery != null ? _inventoryQuery.GetEquippedAxeTier() : AxeTier.None;
             if (!allowBareHands && axeTier == AxeTier.None)
             {
-                if (_enableDebugLogs)
-                {
-                    Debug.Log("[ResourceNodeInteraction] Heavy interact ignored because no axe is equipped.", this);
-                }
-
                 return;
             }
 
@@ -107,13 +90,7 @@ namespace ProjectResonance.ResourceNodes
                 hitDirection = _targetNode.transform.forward;
             }
 
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[ResourceNodeInteraction] Publishing ResourceHitRequestEvent. AxeTier={axeTier}, Damage={damage}, Direction={hitDirection.normalized}", this);
-            }
-
-            _resourceHitPublisher.Publish(new ResourceHitRequestEvent(_targetNode, hitDirection.normalized, damage));
-            Debug.Log($"[ResourceNodeInteraction] Successful resource hit request on '{_targetNode.name}'. Damage={damage}, AxeTier={axeTier}");
+            _targetNode.ReceiveHit(hitDirection.normalized, damage);
             _equippedToolDurabilityService?.TryConsumeEquippedToolDurability(_targetNode.name, 1);
         }
 

@@ -1,11 +1,9 @@
 // Path: Assets/Project/Scpripts/Health/HealthSystem.cs
-// Purpose: Owns player health state, reacts to thermal events, and publishes health-related messages.
-// Dependencies: HealthConfig, MessagePipe, VContainer, ThermalDamageEvent, ThermalHealEvent.
+// Purpose: Owns player health state and exposes health-related runtime events.
+// Dependencies: HealthConfig, VContainer.
 
 using System;
-using MessagePipe;
 using ProjectResonance.Common.Messages;
-using ProjectResonance.DayNight;
 using VContainer.Unity;
 
 namespace ProjectResonance.Health
@@ -16,35 +14,23 @@ namespace ProjectResonance.Health
     public sealed class HealthSystem : IHealthService, IStartable, IDisposable
     {
         private readonly HealthConfig _config;
-        private readonly IBufferedPublisher<HealthChangedMessage> _healthChangedPublisher;
-        private readonly IPublisher<HealthDepletedMessage> _healthDepletedPublisher;
-        private readonly ISubscriber<ThermalDamageEvent> _thermalDamageSubscriber;
-        private readonly ISubscriber<ThermalHealEvent> _thermalHealSubscriber;
-
-        private IDisposable _thermalDamageSubscription;
-        private IDisposable _thermalHealSubscription;
         private float _currentHealth;
 
         /// <summary>
         /// Initializes the health system.
         /// </summary>
         /// <param name="config">Health configuration.</param>
-        /// <param name="healthChangedPublisher">Buffered health state publisher.</param>
-        /// <param name="healthDepletedPublisher">Health depleted publisher.</param>
-        public HealthSystem(
-            HealthConfig config,
-            IBufferedPublisher<HealthChangedMessage> healthChangedPublisher,
-            IPublisher<HealthDepletedMessage> healthDepletedPublisher,
-            ISubscriber<ThermalDamageEvent> thermalDamageSubscriber,
-            ISubscriber<ThermalHealEvent> thermalHealSubscriber)
+        public HealthSystem(HealthConfig config)
         {
             _config = config;
-            _healthChangedPublisher = healthChangedPublisher;
-            _healthDepletedPublisher = healthDepletedPublisher;
-            _thermalDamageSubscriber = thermalDamageSubscriber;
-            _thermalHealSubscriber = thermalHealSubscriber;
             _currentHealth = config.MaxHealth;
         }
+
+        /// <inheritdoc />
+        public event Action<HealthChangedMessage> HealthChanged;
+
+        /// <inheritdoc />
+        public event Action<HealthDepletedMessage> HealthDepleted;
 
         /// <summary>
         /// Gets the current player health.
@@ -66,9 +52,7 @@ namespace ProjectResonance.Health
         /// </summary>
         public void Start()
         {
-            _thermalDamageSubscription = _thermalDamageSubscriber.Subscribe(message => ApplyDamage(message.Amount));
-            _thermalHealSubscription = _thermalHealSubscriber.Subscribe(message => ApplyHealing(message.Amount));
-            _healthChangedPublisher.Publish(new HealthChangedMessage(_currentHealth, _config.MaxHealth, 0f));
+            HealthChanged?.Invoke(new HealthChangedMessage(_currentHealth, _config.MaxHealth, 0f));
         }
 
         /// <summary>
@@ -76,8 +60,6 @@ namespace ProjectResonance.Health
         /// </summary>
         public void Dispose()
         {
-            _thermalDamageSubscription?.Dispose();
-            _thermalHealSubscription?.Dispose();
         }
 
         /// <summary>
@@ -94,11 +76,11 @@ namespace ProjectResonance.Health
             var previousHealth = _currentHealth;
             _currentHealth = UnityEngine.Mathf.Max(0f, _currentHealth - amount);
 
-            _healthChangedPublisher.Publish(new HealthChangedMessage(_currentHealth, _config.MaxHealth, _currentHealth - previousHealth));
+            HealthChanged?.Invoke(new HealthChangedMessage(_currentHealth, _config.MaxHealth, _currentHealth - previousHealth));
 
             if (_currentHealth <= 0f)
             {
-                _healthDepletedPublisher.Publish(new HealthDepletedMessage());
+                HealthDepleted?.Invoke(new HealthDepletedMessage());
             }
         }
 
@@ -115,7 +97,7 @@ namespace ProjectResonance.Health
 
             var previousHealth = _currentHealth;
             _currentHealth = UnityEngine.Mathf.Min(_config.MaxHealth, _currentHealth + amount);
-            _healthChangedPublisher.Publish(new HealthChangedMessage(_currentHealth, _config.MaxHealth, _currentHealth - previousHealth));
+            HealthChanged?.Invoke(new HealthChangedMessage(_currentHealth, _config.MaxHealth, _currentHealth - previousHealth));
         }
     }
 }

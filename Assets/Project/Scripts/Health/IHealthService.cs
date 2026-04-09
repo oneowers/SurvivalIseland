@@ -1,6 +1,9 @@
 // Path: Assets/Project/Scpripts/Health/IHealthService.cs
 // Purpose: Exposes runtime player health operations and state.
-// Dependencies: None.
+// Dependencies: Common.Messages.
+
+using System;
+using ProjectResonance.Common.Messages;
 
 namespace ProjectResonance.Health
 {
@@ -9,6 +12,16 @@ namespace ProjectResonance.Health
     /// </summary>
     public interface IHealthService
     {
+        /// <summary>
+        /// Raised when the runtime player health changes.
+        /// </summary>
+        event Action<HealthChangedMessage> HealthChanged;
+
+        /// <summary>
+        /// Raised when the player reaches zero health.
+        /// </summary>
+        event Action<HealthDepletedMessage> HealthDepleted;
+
         /// <summary>
         /// Gets the current player health.
         /// </summary>

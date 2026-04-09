@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scripts/Player/AimTargetingSystem.cs
 // Purpose: Selects the best right-stick aim target around the player using generic AimTargetable components.
-// Dependencies: MessagePipe, UnityEngine, VContainer.Unity, ProjectResonance.PlayerInput, ProjectResonance.PlayerCombat.
+// Dependencies: UnityEngine, VContainer.Unity, ProjectResonance.PlayerInput, ProjectResonance.PlayerCombat.
 
 using System;
-using MessagePipe;
 using ProjectResonance.PlayerInput;
 using UnityEngine;
 using VContainer.Unity;
@@ -18,10 +17,9 @@ namespace ProjectResonance.PlayerCombat
         private readonly CharacterController _characterController;
         private readonly Camera _playerCamera;
         private readonly AimTargetingConfig _config;
-        private readonly IBufferedSubscriber<AimInput> _aimInputSubscriber;
+        private readonly PlayerInputHandler _playerInputHandler;
         private readonly IPlayerAimModeQuery _playerAimModeQuery;
 
-        private IDisposable _aimInputSubscription;
         private Collider[] _overlapResults;
         private AimTargetable[] _candidateBuffer;
         private Vector2 _aimInput;
@@ -33,18 +31,17 @@ namespace ProjectResonance.PlayerCombat
         /// <param name="characterController">Player character controller.</param>
         /// <param name="playerCamera">Runtime player camera.</param>
         /// <param name="config">Aim-targeting authoring config.</param>
-        /// <param name="aimInputSubscriber">Buffered aim input subscriber.</param>
         public AimTargetingSystem(
             CharacterController characterController,
             Camera playerCamera,
             AimTargetingConfig config,
-            IBufferedSubscriber<AimInput> aimInputSubscriber,
+            PlayerInputHandler playerInputHandler,
             IPlayerAimModeQuery playerAimModeQuery)
         {
             _characterController = characterController;
             _playerCamera = playerCamera;
             _config = config;
-            _aimInputSubscriber = aimInputSubscriber;
+            _playerInputHandler = playerInputHandler;
             _playerAimModeQuery = playerAimModeQuery;
         }
 
@@ -66,7 +63,11 @@ namespace ProjectResonance.PlayerCombat
             var bufferSize = ResolveMaxDetectedColliders();
             _overlapResults = new Collider[bufferSize];
             _candidateBuffer = new AimTargetable[bufferSize];
-            _aimInputSubscription = _aimInputSubscriber.Subscribe(OnAimInputChanged);
+            if (_playerInputHandler != null)
+            {
+                _aimInput = Vector2.ClampMagnitude(_playerInputHandler.CurrentAimInput, 1f);
+                _playerInputHandler.AimInputChanged += OnAimInputChanged;
+            }
         }
 
         /// <summary>
@@ -109,8 +110,11 @@ namespace ProjectResonance.PlayerCombat
         /// </summary>
         public void Dispose()
         {
-            _aimInputSubscription?.Dispose();
-            _aimInputSubscription = null;
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.AimInputChanged -= OnAimInputChanged;
+            }
+
             SetCurrentTarget(null);
         }
 
@@ -130,10 +134,12 @@ namespace ProjectResonance.PlayerCombat
             }
 
             var origin = _characterController.transform.position;
+            var maxAimRadius = ResolveMaxAimRadius();
+            var maxAimRadiusSqr = maxAimRadius * maxAimRadius;
             var desiredPoint = ResolveDesiredPoint(cameraToUse, origin);
             var overlapCount = Physics.OverlapSphereNonAlloc(
                 origin,
-                ResolveMaxAimRadius(),
+                maxAimRadius,
                 _overlapResults,
                 ResolveBroadphaseMask(),
                 QueryTriggerInteraction.Collide);
@@ -169,8 +175,15 @@ namespace ProjectResonance.PlayerCombat
                     continue;
                 }
 
-                var anchorPosition = targetable.ResolveAnchorPosition(ResolveTargetAnchorHeightBias());
-                var distanceSqr = (anchorPosition - desiredPoint).sqrMagnitude;
+                var distanceReferencePosition = targetable.ResolveDistanceReferencePosition(ResolveTargetAnchorHeightBias());
+                var playerToTarget = distanceReferencePosition - origin;
+                playerToTarget.y = 0f;
+                if (playerToTarget.sqrMagnitude > maxAimRadiusSqr)
+                {
+                    continue;
+                }
+
+                var distanceSqr = (distanceReferencePosition - desiredPoint).sqrMagnitude;
                 if (distanceSqr < bestDistanceSqr)
                 {
                     bestDistanceSqr = distanceSqr;
@@ -231,7 +244,7 @@ namespace ProjectResonance.PlayerCombat
             }
 
             var origin = _characterController.transform.position;
-            var toTarget = CurrentTarget.ResolveAnchorPosition(ResolveTargetAnchorHeightBias()) - origin;
+            var toTarget = CurrentTarget.ResolveDistanceReferencePosition(ResolveTargetAnchorHeightBias()) - origin;
             toTarget.y = 0f;
             return toTarget.sqrMagnitude <= ResolveMaxAimRadius() * ResolveMaxAimRadius();
         }

@@ -1,8 +1,7 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireState.cs
-// Purpose: Stores the shared runtime campfire state and publishes state transition events.
-// Dependencies: CampfireConfig, MessagePipe, UnityEngine.
+// Purpose: Stores authored campfire runtime template data.
+// Dependencies: UnityEngine.
 
-using MessagePipe;
 using UnityEngine;
 
 namespace ProjectResonance.Campfire
@@ -190,7 +189,7 @@ namespace ProjectResonance.Campfire
     }
 
     /// <summary>
-    /// Shared runtime state asset for the campfire gameplay loop.
+    /// Authored data asset describing the initial campfire runtime template.
     /// </summary>
     [CreateAssetMenu(fileName = "CampfireState", menuName = "Project Resonance/Campfire/Campfire State")]
     public sealed class CampfireState : ScriptableObject
@@ -209,177 +208,41 @@ namespace ProjectResonance.Campfire
         [SerializeField]
         private bool _isLit = true;
 
-        private CampfireConfig _config;
-        private IBufferedPublisher<FuelChangedEvent> _fuelChangedPublisher;
-        private IPublisher<CampfireLitEvent> _campfireLitPublisher;
-        private IPublisher<CampfireDyingEvent> _campfireDyingPublisher;
-        private IPublisher<CampfireExtinguishedEvent> _campfireExtinguishedPublisher;
-        private IPublisher<CampfireLevelUpEvent> _campfireLevelUpPublisher;
+        /// <summary>
+        /// Gets the authored initial campfire level.
+        /// </summary>
+        public CampfireLevel InitialLevel => _level;
 
         /// <summary>
-        /// Gets the current campfire level.
+        /// Gets the authored initial fuel amount template.
         /// </summary>
-        public CampfireLevel Level => _level;
+        public float InitialFuel => Mathf.Max(0f, _currentFuel);
 
         /// <summary>
-        /// Gets the current fuel amount.
+        /// Gets the authored initial maximum fuel template.
         /// </summary>
-        public float CurrentFuel => _currentFuel;
+        public float InitialMaxFuel => Mathf.Max(0f, _maxFuel);
 
         /// <summary>
-        /// Gets the current maximum fuel capacity.
+        /// Gets whether the campfire starts lit.
         /// </summary>
-        public float MaxFuel => _maxFuel;
+        public bool StartsLit => _isLit;
 
         /// <summary>
-        /// Gets whether the campfire is lit.
+        /// Resolves the authored initial fuel ratio for the runtime state bootstrap.
         /// </summary>
-        public bool IsLit => _isLit;
-
-        /// <summary>
-        /// Gets whether the campfire is in the dying state.
-        /// </summary>
-        public bool IsDying
+        public float ResolveInitialFuelRatio()
         {
-            get
+            if (_level == CampfireLevel.None)
             {
-                if (!_isLit || _config == null || _maxFuel <= 0f)
-                {
-                    return false;
-                }
-
-                return CurrentFuelNormalized < _config.DyingThreshold;
+                return 0f;
             }
-        }
-
-        /// <summary>
-        /// Gets the normalized fuel value in the [0..1] range.
-        /// </summary>
-        public float CurrentFuelNormalized => _maxFuel > 0f ? Mathf.Clamp01(_currentFuel / _maxFuel) : 0f;
-
-        /// <summary>
-        /// Gets the active protection radius for the current level.
-        /// </summary>
-        public float ProtectionRadius => ResolveLevelData().ProtectionRadius;
-
-        /// <summary>
-        /// Gets the active light radius for the current level.
-        /// </summary>
-        public float LightRadius => ResolveLevelData().LightRadius;
-
-        /// <summary>
-        /// Binds the runtime dependencies used to resolve data and publish events.
-        /// </summary>
-        /// <param name="config">Campfire configuration asset.</param>
-        /// <param name="fuelChangedPublisher">Buffered fuel publisher.</param>
-        /// <param name="campfireLitPublisher">Lit event publisher.</param>
-        /// <param name="campfireDyingPublisher">Dying event publisher.</param>
-        /// <param name="campfireExtinguishedPublisher">Extinguished event publisher.</param>
-        /// <param name="campfireLevelUpPublisher">Level-up event publisher.</param>
-        public void Initialize(
-            CampfireConfig config,
-            IBufferedPublisher<FuelChangedEvent> fuelChangedPublisher,
-            IPublisher<CampfireLitEvent> campfireLitPublisher,
-            IPublisher<CampfireDyingEvent> campfireDyingPublisher,
-            IPublisher<CampfireExtinguishedEvent> campfireExtinguishedPublisher,
-            IPublisher<CampfireLevelUpEvent> campfireLevelUpPublisher)
-        {
-            _config = config;
-            _fuelChangedPublisher = fuelChangedPublisher;
-            _campfireLitPublisher = campfireLitPublisher;
-            _campfireDyingPublisher = campfireDyingPublisher;
-            _campfireExtinguishedPublisher = campfireExtinguishedPublisher;
-            _campfireLevelUpPublisher = campfireLevelUpPublisher;
-
-            RefreshLevelData();
-
-            // Sprint 4 uses the campfire state asset as a scene-start template, so each run begins with a fully fueled active fire.
-            if (_level == CampfireLevel.None || _maxFuel <= 0f)
+            if (InitialMaxFuel > 0f)
             {
-                _currentFuel = 0f;
-                _isLit = false;
-                return;
+                return Mathf.Clamp01(InitialFuel / InitialMaxFuel);
             }
 
-            _currentFuel = _maxFuel;
-            _isLit = true;
-        }
-
-        /// <summary>
-        /// Publishes the current state snapshot to late subscribers.
-        /// </summary>
-        public void PublishSnapshot()
-        {
-            PublishFuelChanged();
-        }
-
-        /// <summary>
-        /// Applies a new runtime state snapshot and publishes the resulting transitions.
-        /// </summary>
-        /// <param name="level">New campfire level.</param>
-        /// <param name="currentFuel">New fuel amount.</param>
-        /// <param name="isLit">New lit state.</param>
-        public void ApplyRuntimeState(CampfireLevel level, float currentFuel, bool isLit)
-        {
-            var previousLevel = _level;
-            var previousLit = _isLit;
-            var previousDying = IsDying;
-
-            _level = level;
-            RefreshLevelData();
-
-            _currentFuel = Mathf.Clamp(currentFuel, 0f, _maxFuel);
-            _isLit = _level != CampfireLevel.None && isLit;
-
-            var currentDying = IsDying;
-
-            if (previousLevel != _level && (int)_level > (int)previousLevel)
-            {
-                _campfireLevelUpPublisher?.Publish(new CampfireLevelUpEvent(previousLevel, _level));
-            }
-
-            if (!previousLit && _isLit)
-            {
-                _campfireLitPublisher?.Publish(new CampfireLitEvent(_level));
-            }
-
-            if (!previousDying && currentDying)
-            {
-                _campfireDyingPublisher?.Publish(new CampfireDyingEvent(_currentFuel, _maxFuel, _level));
-            }
-
-            if (previousLit && !_isLit)
-            {
-                _campfireExtinguishedPublisher?.Publish(new CampfireExtinguishedEvent(_level));
-            }
-
-            PublishFuelChanged();
-        }
-
-        private void RefreshLevelData()
-        {
-            if (_config == null || _level == CampfireLevel.None)
-            {
-                _maxFuel = 0f;
-                return;
-            }
-
-            _maxFuel = Mathf.Max(0f, _config.GetLevelData(_level).FuelCapacity);
-        }
-
-        private CampfireLevelData ResolveLevelData()
-        {
-            if (_config == null || _level == CampfireLevel.None)
-            {
-                return default;
-            }
-
-            return _config.GetLevelData(_level);
-        }
-
-        private void PublishFuelChanged()
-        {
-            _fuelChangedPublisher?.Publish(new FuelChangedEvent(_currentFuel, _maxFuel, _level, _isLit, IsDying, ProtectionRadius));
+            return StartsLit ? 1f : 0f;
         }
     }
 }

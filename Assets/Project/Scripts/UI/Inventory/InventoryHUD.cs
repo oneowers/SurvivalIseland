@@ -1,10 +1,9 @@
 // Path: Assets/Project/Scripts/UI/Inventory/InventoryHUD.cs
-// Purpose: Passively renders the authored Canvas inventory HUD from the shared inventory runtime state and publishes active slot changes.
-// Dependencies: MessagePipe, TMPro, UnityEngine.UI, Input System, VContainer, InventorySystem, InventoryHudSlotAuthoring.
+// Purpose: Passively renders the authored Canvas inventory HUD from the shared inventory runtime state and active slot selection.
+// Dependencies: TMPro, UnityEngine.UI, Input System, VContainer, InventorySystem, InventoryHudSlotAuthoring.
 
 using System;
 using System.Collections.Generic;
-using MessagePipe;
 using ProjectResonance.Inventory;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -37,27 +36,14 @@ namespace ProjectResonance.InventoryUI
         private Color _filledTintColor = new Color(1f, 1f, 1f, 1f);
 
         private InventorySystem _inventorySystem;
-        private IBufferedSubscriber<InventoryChangedEvent> _inventoryChangedSubscriber;
-        private IBufferedSubscriber<ActiveSlotChangedEvent> _activeSlotChangedSubscriber;
-        private IBufferedPublisher<ActiveSlotChangedEvent> _activeSlotChangedPublisher;
-
         private InventoryHudSlotAuthoring[] _slotViews = Array.Empty<InventoryHudSlotAuthoring>();
         private InputAction _scrollAction;
-        private IDisposable _inventoryChangedSubscription;
-        private IDisposable _activeSlotChangedSubscription;
         private int _activeSlotIndex;
 
         [Inject]
-        private void Construct(
-            InventorySystem inventorySystem,
-            IBufferedSubscriber<InventoryChangedEvent> inventoryChangedSubscriber,
-            IBufferedSubscriber<ActiveSlotChangedEvent> activeSlotChangedSubscriber,
-            IBufferedPublisher<ActiveSlotChangedEvent> activeSlotChangedPublisher)
+        private void Construct(InventorySystem inventorySystem)
         {
             _inventorySystem = inventorySystem;
-            _inventoryChangedSubscriber = inventoryChangedSubscriber;
-            _activeSlotChangedSubscriber = activeSlotChangedSubscriber;
-            _activeSlotChangedPublisher = activeSlotChangedPublisher;
         }
 
         private void Awake()
@@ -70,18 +56,18 @@ namespace ProjectResonance.InventoryUI
 
         private void Start()
         {
-            if (_inventoryChangedSubscriber != null)
+            if (_inventorySystem != null)
             {
-                _inventoryChangedSubscription = _inventoryChangedSubscriber.Subscribe(_ => RefreshSlots());
-            }
-
-            if (_activeSlotChangedSubscriber != null)
-            {
-                _activeSlotChangedSubscription = _activeSlotChangedSubscriber.Subscribe(OnActiveSlotChanged);
+                _activeSlotIndex = _inventorySystem.ActiveSlotIndex;
+                _inventorySystem.InventoryChanged += OnInventoryChanged;
+                _inventorySystem.ActiveSlotChanged += OnActiveSlotChanged;
             }
 
             RefreshSlots();
-            PublishActiveSlotChange(_activeSlotIndex);
+            if (_inventorySystem != null)
+            {
+                _inventorySystem.SetActiveSlot(_activeSlotIndex);
+            }
         }
 
         private void OnEnable()
@@ -96,8 +82,12 @@ namespace ProjectResonance.InventoryUI
 
         private void OnDestroy()
         {
-            _inventoryChangedSubscription?.Dispose();
-            _activeSlotChangedSubscription?.Dispose();
+            if (_inventorySystem != null)
+            {
+                _inventorySystem.InventoryChanged -= OnInventoryChanged;
+                _inventorySystem.ActiveSlotChanged -= OnActiveSlotChanged;
+            }
+
             UnregisterSlotClicks();
 
             if (_scrollAction != null)
@@ -106,6 +96,11 @@ namespace ProjectResonance.InventoryUI
                 _scrollAction.Dispose();
                 _scrollAction = null;
             }
+        }
+
+        private void OnInventoryChanged(InventoryChangedEvent _)
+        {
+            RefreshSlots();
         }
 
         private void CollectSlotViews()
@@ -211,13 +206,7 @@ namespace ProjectResonance.InventoryUI
                 return;
             }
 
-            if (_activeSlotChangedPublisher == null)
-            {
-                RefreshSlotHighlights();
-                return;
-            }
-
-            _activeSlotChangedPublisher.Publish(new ActiveSlotChangedEvent(previousSlotIndex, _activeSlotIndex));
+            _inventorySystem?.SetActiveSlot(_activeSlotIndex);
         }
 
         private void OnSlotClicked(int slotIndex)
@@ -250,7 +239,6 @@ namespace ProjectResonance.InventoryUI
                 if (stack.HasDurability)
                 {
                     slotView.SetDurabilityNormalized(stack.DurabilityNormalized);
-                    Debug.Log($"[InventoryHUD] Durable slot refreshed. Slot={slotIndex}, Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Durability={stack.CurrentDurability}/{stack.MaxDurability}");
                 }
             }
 
@@ -286,13 +274,6 @@ namespace ProjectResonance.InventoryUI
             if (_inventorySystem == null || _slotViews == null)
             {
                 return;
-            }
-
-            if (_slotViews.Length != _inventorySystem.MaxSlots)
-            {
-                Debug.LogWarning(
-                    $"[InventoryHUD] Expected {_inventorySystem.MaxSlots} authored inventory slots but found {_slotViews.Length}. HUD will render the discovered slot count.",
-                    this);
             }
         }
 

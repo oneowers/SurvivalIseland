@@ -1,8 +1,7 @@
 // Path: Assets/Project/Scpripts/Ghosts/LordWraith.cs
 // Purpose: Implements the Lord Wraith boss ghost with pre-dawn spawn window, player gravity pull, and strong-light retreat behavior.
-// Dependencies: GhostBase, GhostSpawnConfig, ICampfireService, IDayNightService, MessagePipe, PlayerGravityPullEvent, UnityEngine, VContainer.
+// Dependencies: GhostBase, GhostSpawnConfig, ICampfireService, IDayNightService, PlayerGravityPullEvent, UnityEngine, VContainer.
 
-using MessagePipe;
 using ProjectResonance.Campfire;
 using ProjectResonance.PlayerMovement;
 using UnityEngine;
@@ -35,7 +34,7 @@ namespace ProjectResonance.Ghosts
         [Min(0.1f)]
         private float _pullPublishDistanceMultiplier = 1f;
 
-        private IPublisher<PlayerGravityPullEvent> _playerGravityPullPublisher;
+        private PlayerMovementSignals _movementSignals;
         private Vector3 _baseScale;
         private float _retreatUntilTime;
 
@@ -45,9 +44,9 @@ namespace ProjectResonance.Ghosts
         protected override float ContactDamage => _contactDamage;
 
         [Inject]
-        private void Construct(IPublisher<PlayerGravityPullEvent> playerGravityPullPublisher)
+        private void Construct(PlayerMovementSignals movementSignals)
         {
-            _playerGravityPullPublisher = playerGravityPullPublisher;
+            _movementSignals = movementSignals;
         }
 
         /// <summary>
@@ -157,7 +156,7 @@ namespace ProjectResonance.Ghosts
 
         private void PublishGravityPull()
         {
-            if (_playerGravityPullPublisher == null || PlayerSurvivor == null || Config == null)
+            if (_movementSignals == null || PlayerSurvivor == null || Config == null)
             {
                 return;
             }
@@ -169,7 +168,7 @@ namespace ProjectResonance.Ghosts
                 return;
             }
 
-            _playerGravityPullPublisher.Publish(new PlayerGravityPullEvent(
+            _movementSignals.RequestGravityPull(new PlayerGravityPullEvent(
                 transform.position,
                 Config.LordWraithPullStrength,
                 pullRadius));

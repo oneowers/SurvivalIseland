@@ -1,11 +1,9 @@
 // Path: Assets/Project/Scpripts/Inventory/InventorySystem.cs
 // Purpose: Owns the player's 10-slot inventory, stack rules, and inventory change events.
-// Dependencies: MessagePipe, UnityEngine, VContainer.
+// Dependencies: UnityEngine, VContainer.
 
 using System;
 using System.Collections.Generic;
-using System.Text;
-using MessagePipe;
 using UnityEngine;
 using VContainer.Unity;
 
@@ -173,20 +171,18 @@ namespace ProjectResonance.Inventory
     public sealed class InventorySystem : IStartable
     {
         private readonly InventoryConfig _inventoryConfig;
-        private readonly IBufferedPublisher<InventoryChangedEvent> _inventoryChangedPublisher;
         private readonly List<ItemStack> _slots;
 
         private int _version;
+        private int _activeSlotIndex;
 
         /// <summary>
         /// Creates the player inventory system.
         /// </summary>
         /// <param name="inventoryConfig">Shared inventory authoring config.</param>
-        /// <param name="inventoryChangedPublisher">Buffered inventory change publisher.</param>
-        public InventorySystem(InventoryConfig inventoryConfig, IBufferedPublisher<InventoryChangedEvent> inventoryChangedPublisher)
+        public InventorySystem(InventoryConfig inventoryConfig)
         {
             _inventoryConfig = inventoryConfig;
-            _inventoryChangedPublisher = inventoryChangedPublisher;
             MaxSlots = Mathf.Max(1, _inventoryConfig != null ? _inventoryConfig.MaxSlots : 10);
             _slots = new List<ItemStack>(MaxSlots);
         }
@@ -202,6 +198,21 @@ namespace ProjectResonance.Inventory
         public IReadOnlyList<ItemStack> Slots => _slots;
 
         /// <summary>
+        /// Gets the currently active quick slot index.
+        /// </summary>
+        public int ActiveSlotIndex => _activeSlotIndex;
+
+        /// <summary>
+        /// Raised when any slot content changes.
+        /// </summary>
+        public event Action<InventoryChangedEvent> InventoryChanged;
+
+        /// <summary>
+        /// Raised when the active quick slot changes.
+        /// </summary>
+        public event Action<ActiveSlotChangedEvent> ActiveSlotChanged;
+
+        /// <summary>
         /// Initializes the fixed-size slot list and publishes the initial snapshot.
         /// </summary>
         public void Start()
@@ -209,6 +220,7 @@ namespace ProjectResonance.Inventory
             EnsureInitialized();
             ApplyStartupLoadout();
             PublishInventoryChanged();
+            PublishActiveSlotChanged(_activeSlotIndex, _activeSlotIndex);
         }
 
         /// <summary>
@@ -282,7 +294,7 @@ namespace ProjectResonance.Inventory
         /// <returns>True when the full amount was added.</returns>
         public bool AddItem(ItemDefinition itemDefinition, int count)
         {
-            return AddItemInternal(itemDefinition, count, publishInventoryChanged: true, logAddedItem: true);
+            return AddItemInternal(itemDefinition, count, publishInventoryChanged: true);
         }
 
         /// <summary>
@@ -302,7 +314,6 @@ namespace ProjectResonance.Inventory
             var removedStack = _slots[slotIndex];
             _slots[slotIndex] = removedStack.Clear();
             PublishInventoryChanged();
-            Debug.Log($"[InventorySystem] Removed slot item at index {slotIndex}. Item={(removedStack.ItemDefinition != null ? removedStack.ItemDefinition.DisplayName : "null")}. Snapshot={BuildInventorySnapshot()}");
             return true;
         }
 
@@ -330,9 +341,6 @@ namespace ProjectResonance.Inventory
             var nextCount = slot.Count - amount;
             _slots[slotIndex] = nextCount > 0 ? slot.WithCount(nextCount) : slot.Clear();
             PublishInventoryChanged();
-
-            Debug.Log(
-                $"[InventorySystem] Consumed {amount}x {(slot.ItemDefinition != null ? slot.ItemDefinition.DisplayName : "null")} from slot {slotIndex}. Snapshot={BuildInventorySnapshot()}");
             return true;
         }
 
@@ -464,14 +472,32 @@ namespace ProjectResonance.Inventory
             {
                 _slots[slotIndex] = slot.Clear();
                 PublishInventoryChanged();
-                Debug.LogWarning($"[InventorySystem] '{itemDefinition.DisplayName}' broke and was removed from slot {slotIndex}. Snapshot={BuildInventorySnapshot()}");
                 return true;
             }
 
             _slots[slotIndex] = slot.WithDurability(nextDurability, slot.MaxDurability);
             PublishInventoryChanged();
-            Debug.Log($"[InventorySystem] Consumed {amount} durability from '{itemDefinition.DisplayName}'. Remaining={nextDurability}/{slot.MaxDurability}, Slot={slotIndex}, Snapshot={BuildInventorySnapshot()}");
             return true;
+        }
+
+        /// <summary>
+        /// Sets the currently active quick slot index.
+        /// </summary>
+        /// <param name="slotIndex">Requested slot index.</param>
+        public void SetActiveSlot(int slotIndex)
+        {
+            EnsureInitialized();
+
+            var clampedSlotIndex = Mathf.Clamp(slotIndex, 0, Mathf.Max(0, _slots.Count - 1));
+            if (_activeSlotIndex == clampedSlotIndex)
+            {
+                PublishActiveSlotChanged(_activeSlotIndex, _activeSlotIndex);
+                return;
+            }
+
+            var previousSlotIndex = _activeSlotIndex;
+            _activeSlotIndex = clampedSlotIndex;
+            PublishActiveSlotChanged(previousSlotIndex, _activeSlotIndex);
         }
 
         private void EnsureInitialized()
@@ -482,14 +508,12 @@ namespace ProjectResonance.Inventory
             }
         }
 
-        private bool AddItemInternal(ItemDefinition itemDefinition, int count, bool publishInventoryChanged, bool logAddedItem)
+        private bool AddItemInternal(ItemDefinition itemDefinition, int count, bool publishInventoryChanged)
         {
             EnsureInitialized();
 
             if (!CanAddItem(itemDefinition, count))
             {
-                Debug.LogWarning(
-                    $"[InventorySystem] AddItem failed. Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Count={count}, Snapshot={BuildInventorySnapshot()}");
                 return false;
             }
 
@@ -522,11 +546,6 @@ namespace ProjectResonance.Inventory
                             PublishInventoryChanged();
                         }
 
-                        if (logAddedItem)
-                        {
-                            LogInventoryAdded(itemDefinition, count);
-                        }
-
                         return true;
                     }
                 }
@@ -553,17 +572,9 @@ namespace ProjectResonance.Inventory
                         PublishInventoryChanged();
                     }
 
-                    if (logAddedItem)
-                    {
-                        LogInventoryAdded(itemDefinition, count);
-                    }
-
                     return true;
                 }
             }
-
-            Debug.LogWarning(
-                $"[InventorySystem] AddItem reached unexpected incomplete state. Item={(itemDefinition != null ? itemDefinition.DisplayName : "null")}, Count={count}, Remaining={remaining}, Snapshot={BuildInventorySnapshot()}");
             return false;
         }
 
@@ -582,13 +593,10 @@ namespace ProjectResonance.Inventory
                     continue;
                 }
 
-                if (!AddItemInternal(entry.ItemDefinition, entry.Count, publishInventoryChanged: false, logAddedItem: true))
+                if (!AddItemInternal(entry.ItemDefinition, entry.Count, publishInventoryChanged: false))
                 {
-                    Debug.LogWarning($"[InventorySystem] Failed to apply startup loadout item '{entry.ItemDefinition.DisplayName}' x{entry.Count}.");
                     continue;
                 }
-
-                Debug.Log($"[InventorySystem] Startup loadout granted {entry.Count}x {entry.ItemDefinition.DisplayName}.");
             }
         }
 
@@ -605,55 +613,13 @@ namespace ProjectResonance.Inventory
         private void PublishInventoryChanged()
         {
             _version++;
-            _inventoryChangedPublisher.Publish(new InventoryChangedEvent(_version));
+            InventoryChanged?.Invoke(new InventoryChangedEvent(_version));
         }
 
-        private void LogInventoryAdded(ItemDefinition itemDefinition, int count)
+        private void PublishActiveSlotChanged(int previousSlotIndex, int currentSlotIndex)
         {
-            Debug.Log(
-                $"[InventorySystem] Added {count}x {(itemDefinition != null ? itemDefinition.DisplayName : "null")}. Snapshot={BuildInventorySnapshot()}");
+            ActiveSlotChanged?.Invoke(new ActiveSlotChangedEvent(previousSlotIndex, currentSlotIndex));
         }
 
-        private string BuildInventorySnapshot()
-        {
-            EnsureInitialized();
-
-            var builder = new StringBuilder(128);
-            builder.Append('[');
-
-            for (var index = 0; index < _slots.Count; index++)
-            {
-                if (index > 0)
-                {
-                    builder.Append(" | ");
-                }
-
-                var slot = _slots[index];
-                builder.Append(index);
-                builder.Append(':');
-
-                if (slot.IsEmpty)
-                {
-                    builder.Append("Empty");
-                    continue;
-                }
-
-                builder.Append(slot.ItemDefinition != null ? slot.ItemDefinition.DisplayName : "null");
-                builder.Append('x');
-                builder.Append(slot.Count);
-
-                if (slot.HasDurability)
-                {
-                    builder.Append('(');
-                    builder.Append(slot.CurrentDurability);
-                    builder.Append('/');
-                    builder.Append(slot.MaxDurability);
-                    builder.Append(')');
-                }
-            }
-
-            builder.Append(']');
-            return builder.ToString();
-        }
     }
 }

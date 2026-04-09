@@ -1,11 +1,9 @@
 // Path: Assets/Project/Scripts/ResourceNodes/ResourceNodeHitReceiver.cs
-// Purpose: Adapts the generic player-hit contract onto the existing resource-node hit request pipeline.
-// Dependencies: MessagePipe, UnityEngine, VContainer, ProjectResonance.ResourceNodes, ProjectResonance.PlayerCombat.
+// Purpose: Adapts the generic player-hit contract onto the existing resource-node runtime.
+// Dependencies: UnityEngine, ProjectResonance.ResourceNodes, ProjectResonance.PlayerCombat.
 
-using MessagePipe;
 using ProjectResonance.PlayerCombat;
 using UnityEngine;
-using VContainer;
 
 namespace ProjectResonance.ResourceNodes
 {
@@ -20,18 +18,10 @@ namespace ProjectResonance.ResourceNodes
         [SerializeField]
         private ResourceNodeRuntime _runtime;
 
-        private IPublisher<ResourceHitRequestEvent> _resourceHitPublisher;
-
         /// <summary>
         /// Gets whether the resource node can currently receive hits.
         /// </summary>
         public bool CanReceiveHit => _runtime != null && !_runtime.IsDestroyed;
-
-        [Inject]
-        private void Construct(IPublisher<ResourceHitRequestEvent> resourceHitPublisher)
-        {
-            _resourceHitPublisher = resourceHitPublisher;
-        }
 
         /// <summary>
         /// Forwards the current hit to the resource-node runtime.
@@ -39,12 +29,12 @@ namespace ProjectResonance.ResourceNodes
         /// <param name="context">Resolved player-hit payload.</param>
         public void ReceiveHit(in PlayerHitContext context)
         {
-            if (!CanReceiveHit || _resourceHitPublisher == null)
+            if (!CanReceiveHit)
             {
                 return;
             }
 
-            _resourceHitPublisher.Publish(new ResourceHitRequestEvent(_runtime, ResolvePlanarHitDirection(context.HitDirection), Mathf.Max(1, context.Damage)));
+            _runtime.ReceiveHit(ResolvePlanarHitDirection(context.HitDirection), Mathf.Max(1, context.Damage));
         }
 
         private void Reset()

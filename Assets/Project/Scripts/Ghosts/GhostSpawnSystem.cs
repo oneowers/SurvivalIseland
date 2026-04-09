@@ -1,10 +1,9 @@
 // Path: Assets/Project/Scpripts/Ghosts/GhostSpawnSystem.cs
 // Purpose: Spawns pooled Pale Drifts at night, requests the Lord Wraith during the pre-dawn window, and despawns all ghosts at daybreak.
-// Dependencies: MessagePipe, GhostSpawnConfig, GhostSpawnArea, GhostBase, ICampfireService, IDayNightService, IHealthService, IRandomProvider, VContainer.
+// Dependencies: GhostSpawnConfig, GhostSpawnArea, GhostBase, ICampfireService, IDayNightService, IHealthService, IRandomProvider, VContainer.
 
 using System;
 using System.Collections.Generic;
-using MessagePipe;
 using ProjectResonance.Campfire;
 using ProjectResonance.Common.Messages;
 using ProjectResonance.Common.Random;
@@ -30,19 +29,12 @@ namespace ProjectResonance.Ghosts
         private readonly IObjectResolver _resolver;
         private readonly IHealthService _healthService;
         private readonly IDayNightService _dayNightService;
-        private readonly ISubscriber<GhostsActivateEvent> _ghostsActivateSubscriber;
-        private readonly ISubscriber<GhostsDeactivateEvent> _ghostsDeactivateSubscriber;
-        private readonly ISubscriber<LordWraithSpawnRequestEvent> _lordWraithSpawnRequestSubscriber;
-        private readonly ISubscriber<HealthDepletedMessage> _healthDepletedSubscriber;
+        private readonly TimeOfDayEventsSystem _timeOfDayEventsSystem;
 
         private readonly List<GhostBase> _activeGhosts = new List<GhostBase>(16);
 
         private ObjectPool<GhostBase> _paleDriftPool;
         private ObjectPool<GhostBase> _lordWraithPool;
-        private IDisposable _ghostsActivateSubscription;
-        private IDisposable _ghostsDeactivateSubscription;
-        private IDisposable _lordWraithSpawnRequestSubscription;
-        private IDisposable _healthDepletedSubscription;
         private bool _nightIsActive;
         private bool _lordWraithSpawnedThisNight;
         private int _currentDayNumber = 1;
@@ -58,10 +50,6 @@ namespace ProjectResonance.Ghosts
         /// <param name="resolver">Object resolver used to instantiate pooled ghosts.</param>
         /// <param name="healthService">Runtime player health service.</param>
         /// <param name="dayNightService">Runtime day and night service.</param>
-        /// <param name="ghostsActivateSubscriber">Night activation subscriber.</param>
-        /// <param name="ghostsDeactivateSubscriber">Daybreak deactivation subscriber.</param>
-        /// <param name="lordWraithSpawnRequestSubscriber">Lord Wraith request subscriber.</param>
-        /// <param name="healthDepletedSubscriber">Player death subscriber.</param>
         public GhostSpawnSystem(
             GhostSpawnConfig config,
             GhostSpawnArea spawnArea,
@@ -71,10 +59,7 @@ namespace ProjectResonance.Ghosts
             IObjectResolver resolver,
             IHealthService healthService,
             IDayNightService dayNightService,
-            ISubscriber<GhostsActivateEvent> ghostsActivateSubscriber,
-            ISubscriber<GhostsDeactivateEvent> ghostsDeactivateSubscriber,
-            ISubscriber<LordWraithSpawnRequestEvent> lordWraithSpawnRequestSubscriber,
-            ISubscriber<HealthDepletedMessage> healthDepletedSubscriber)
+            TimeOfDayEventsSystem timeOfDayEventsSystem)
         {
             _config = config;
             _spawnArea = spawnArea;
@@ -84,10 +69,7 @@ namespace ProjectResonance.Ghosts
             _resolver = resolver;
             _healthService = healthService;
             _dayNightService = dayNightService;
-            _ghostsActivateSubscriber = ghostsActivateSubscriber;
-            _ghostsDeactivateSubscriber = ghostsDeactivateSubscriber;
-            _lordWraithSpawnRequestSubscriber = lordWraithSpawnRequestSubscriber;
-            _healthDepletedSubscriber = healthDepletedSubscriber;
+            _timeOfDayEventsSystem = timeOfDayEventsSystem;
         }
 
         /// <summary>
@@ -113,10 +95,17 @@ namespace ProjectResonance.Ghosts
                 Mathf.Max(1, _config != null ? _config.LordWraithPoolCapacity : 1),
                 1);
 
-            _ghostsActivateSubscription = _ghostsActivateSubscriber.Subscribe(_ => HandleGhostsActivated());
-            _ghostsDeactivateSubscription = _ghostsDeactivateSubscriber.Subscribe(_ => HandleGhostsDeactivated());
-            _lordWraithSpawnRequestSubscription = _lordWraithSpawnRequestSubscriber.Subscribe(_ => TrySpawnLordWraith());
-            _healthDepletedSubscription = _healthDepletedSubscriber.Subscribe(_ => DespawnAllGhosts());
+            if (_timeOfDayEventsSystem != null)
+            {
+                _timeOfDayEventsSystem.GhostsActivated += OnGhostsActivated;
+                _timeOfDayEventsSystem.GhostsDeactivated += OnGhostsDeactivated;
+                _timeOfDayEventsSystem.LordWraithSpawnRequested += OnLordWraithSpawnRequested;
+            }
+
+            if (_healthService != null)
+            {
+                _healthService.HealthDepleted += OnHealthDepleted;
+            }
 
             if (_dayNightService != null &&
                 (_dayNightService.CurrentTimeOfDay == TimeOfDay.Night || _dayNightService.CurrentTimeOfDay == TimeOfDay.PreDawn))
@@ -135,10 +124,17 @@ namespace ProjectResonance.Ghosts
         /// </summary>
         public void Dispose()
         {
-            _ghostsActivateSubscription?.Dispose();
-            _ghostsDeactivateSubscription?.Dispose();
-            _lordWraithSpawnRequestSubscription?.Dispose();
-            _healthDepletedSubscription?.Dispose();
+            if (_timeOfDayEventsSystem != null)
+            {
+                _timeOfDayEventsSystem.GhostsActivated -= OnGhostsActivated;
+                _timeOfDayEventsSystem.GhostsDeactivated -= OnGhostsDeactivated;
+                _timeOfDayEventsSystem.LordWraithSpawnRequested -= OnLordWraithSpawnRequested;
+            }
+
+            if (_healthService != null)
+            {
+                _healthService.HealthDepleted -= OnHealthDepleted;
+            }
 
             DespawnAllGhosts();
             _paleDriftPool?.Dispose();
@@ -169,6 +165,26 @@ namespace ProjectResonance.Ghosts
             _lordWraithSpawnedThisNight = false;
             DespawnAllGhosts();
             _currentDayNumber++;
+        }
+
+        private void OnGhostsActivated(GhostsActivateEvent _)
+        {
+            HandleGhostsActivated();
+        }
+
+        private void OnGhostsDeactivated(GhostsDeactivateEvent _)
+        {
+            HandleGhostsDeactivated();
+        }
+
+        private void OnLordWraithSpawnRequested(LordWraithSpawnRequestEvent _)
+        {
+            TrySpawnLordWraith();
+        }
+
+        private void OnHealthDepleted(HealthDepletedMessage _)
+        {
+            DespawnAllGhosts();
         }
 
         private void SpawnPaleDrifts()

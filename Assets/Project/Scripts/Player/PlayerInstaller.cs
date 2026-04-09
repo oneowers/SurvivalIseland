@@ -1,9 +1,8 @@
 // Path: Assets/Project/Scpripts/Player/PlayerInstaller.cs
-// Purpose: Registers the full player module in VContainer and wires MessagePipe publishers for character and camera systems.
-// Dependencies: MessagePipe, PlayerInput, PlayerMovement, PlayerWeight, ThirdPersonCamera, UnityEngine, VContainer.
+// Purpose: Registers the full player module and its explicit runtime event services.
+// Dependencies: PlayerInput, PlayerMovement, PlayerWeight, ThirdPersonCamera, UnityEngine, VContainer.
 
 using System;
-using MessagePipe;
 using ProjectResonance.Campfire;
 using ProjectResonance.Crafting;
 using ProjectResonance.Inventory;
@@ -148,24 +147,24 @@ namespace ProjectResonance.PlayerInstaller
             {
                 builder.RegisterInstance((IInventoryQuery)new NullInventoryQuery());
             }
+            builder.Register<PlayerWeightRuntime>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+            builder.Register<PlayerMovementSignals>(Lifetime.Singleton).AsSelf();
             builder.Register<PlayerHitDamageResolver>(Lifetime.Singleton);
             builder.Register<PlantableResourceSpawnService>(Lifetime.Singleton);
             builder.Register<PlantingPreviewVisualizer>(Lifetime.Singleton);
             builder.Register<PlayerAimPlantingInteractor>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
             builder.Register<AimTargetingSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
-
-            RegisterMessagePipe(builder);
+            builder.Register<PlayerMovementSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+            builder.Register<PlayerAimCombatInteractor>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+            builder.Register<ThirdPersonCameraSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+            if (_heldItemController != null)
+            {
+                builder.Register<CraftingSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+            }
 
             // Register entry points explicitly so interdependent runtime systems
             // resolve the same scoped instance through VContainer.
             EntryPointsBuilder.EnsureDispatcherRegistered(builder);
-            builder.RegisterEntryPoint<PlayerMovementSystem>();
-            builder.RegisterEntryPoint<PlayerAimCombatInteractor>();
-            builder.RegisterEntryPoint<ThirdPersonCameraSystem>();
-            if (_heldItemController != null)
-            {
-                builder.RegisterEntryPoint<CraftingSystem>();
-            }
 
             builder.RegisterBuildCallback(container =>
             {
@@ -192,12 +191,6 @@ namespace ProjectResonance.PlayerInstaller
                 if (_mobileControlsRoot != null)
                 {
                     container.InjectGameObject(_mobileControlsRoot);
-
-                    var mobileControlsPresenter = _mobileControlsRoot.GetComponent<MobileControlsPresenter>();
-                    if (mobileControlsPresenter != null)
-                    {
-                        mobileControlsPresenter.Initialize();
-                    }
                 }
                 if (_additionalInjectedObjects != null)
                 {
@@ -213,7 +206,6 @@ namespace ProjectResonance.PlayerInstaller
                     }
                 }
 
-                _playerWeightState.Initialize(container.Resolve<IBufferedPublisher<WeightChangedEvent>>());
                 _playerInputHandler.Initialize();
                 if (_resourceTargetDetector != null)
                 {
@@ -224,54 +216,6 @@ namespace ProjectResonance.PlayerInstaller
                     _playerResourceInteractor.Initialize();
                 }
             });
-        }
-
-        private void RegisterMessagePipe(IContainerBuilder builder)
-        {
-            var messagePipeBuilder = new BuiltinContainerBuilder();
-            messagePipeBuilder.AddMessagePipe();
-            messagePipeBuilder.AddMessageBroker<MoveInput>();
-            messagePipeBuilder.AddMessageBroker<SprintInput>();
-            messagePipeBuilder.AddMessageBroker<AimInput>();
-            messagePipeBuilder.AddMessageBroker<WeightChangedEvent>();
-            messagePipeBuilder.AddMessageBroker<JumpInput>();
-            messagePipeBuilder.AddMessageBroker<CrouchInput>();
-            messagePipeBuilder.AddMessageBroker<InteractInput>();
-            messagePipeBuilder.AddMessageBroker<HeavyInteractInput>();
-            messagePipeBuilder.AddMessageBroker<CraftInput>();
-            messagePipeBuilder.AddMessageBroker<FootstepEvent>();
-            messagePipeBuilder.AddMessageBroker<CraftSuccessEvent>();
-            messagePipeBuilder.AddMessageBroker<CraftFailEvent>();
-
-            var serviceProvider = messagePipeBuilder.BuildServiceProvider();
-
-            RegisterBufferedMessage<MoveInput>(builder, serviceProvider);
-            RegisterBufferedMessage<SprintInput>(builder, serviceProvider);
-            RegisterBufferedMessage<AimInput>(builder, serviceProvider);
-            RegisterBufferedMessage<WeightChangedEvent>(builder, serviceProvider);
-
-            RegisterMessage<JumpInput>(builder, serviceProvider);
-            RegisterMessage<CrouchInput>(builder, serviceProvider);
-            RegisterMessage<InteractInput>(builder, serviceProvider);
-            RegisterMessage<HeavyInteractInput>(builder, serviceProvider);
-            RegisterMessage<CraftInput>(builder, serviceProvider);
-            RegisterMessage<FootstepEvent>(builder, serviceProvider);
-            RegisterMessage<CraftSuccessEvent>(builder, serviceProvider);
-            RegisterMessage<CraftFailEvent>(builder, serviceProvider);
-        }
-
-        private void RegisterMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)
-        {
-            builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
-            builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
-        }
-
-        private void RegisterBufferedMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)
-        {
-            builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
-            builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
-            builder.RegisterInstance((IBufferedPublisher<TMessage>)serviceProvider.GetService(typeof(IBufferedPublisher<TMessage>)));
-            builder.RegisterInstance((IBufferedSubscriber<TMessage>)serviceProvider.GetService(typeof(IBufferedSubscriber<TMessage>)));
         }
 
         private sealed class NullInventoryQuery : IInventoryQuery

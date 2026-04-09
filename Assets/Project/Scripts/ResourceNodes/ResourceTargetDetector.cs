@@ -16,10 +16,6 @@ namespace ProjectResonance.ResourceNodes
     [DisallowMultipleComponent]
     public sealed class ResourceTargetDetector : MonoBehaviour
     {
-        [Header("Debug")]
-        [SerializeField]
-        private bool _enableDebugLogs = false;
-
         [Header("References")]
         [SerializeField]
         private ResourceTargetingConfig _targetingConfig;
@@ -48,11 +44,6 @@ namespace ProjectResonance.ResourceNodes
         {
             if (_isInitialized || _targetingConfig == null)
             {
-                if (_enableDebugLogs && _targetingConfig == null)
-                {
-                    Debug.LogWarning("[ResourceTargetDetector] Initialize skipped because ResourceTargetingConfig is missing.", this);
-                }
-
                 return;
             }
 
@@ -62,11 +53,6 @@ namespace ProjectResonance.ResourceNodes
             _overlapResults = new Collider[bufferSize];
             _candidateNodes = new ResourceNodeRuntime[bufferSize];
             _scanCancellation = new CancellationTokenSource();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[ResourceTargetDetector] Initialized. Radius={_targetingConfig.DetectionRadius}, Frequency={_targetingConfig.CheckFrequencySeconds}, LayerMask={_targetingConfig.BroadphaseLayerMask.value}", this);
-            }
 
             RunDetectionLoopAsync(_scanCancellation.Token).Forget();
         }
@@ -210,11 +196,6 @@ namespace ProjectResonance.ResourceNodes
             }
 
             _currentTarget = nextTarget;
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[ResourceTargetDetector] CurrentTarget={(nextTarget != null ? nextTarget.name : "null")}", this);
-            }
         }
 
     }

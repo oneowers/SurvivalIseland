@@ -52,7 +52,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1a3bb004919e74427a8cb5caee7c29b5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _enableDebugLogs: 1
   _hitPoints: []
 --- !u!114 &577937561425922043
 MonoBehaviour:
@@ -66,7 +65,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 103675ce04ce24be59db4c335e719813, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _enableDebugLogs: 1
   _hitOrigin: {fileID: 3205790157987938919}
 --- !u!114 &8496123412756123456
 MonoBehaviour:
@@ -115,7 +113,6 @@ MonoBehaviour:
   - {fileID: 3213672478887239040}
   - {fileID: 1086593663147877519}
   - {fileID: 1724099252128395703}
-  _drawDebugGizmos: 1
 --- !u!114 &602114478900112244
 MonoBehaviour:
   m_ObjectHideFlags: 0

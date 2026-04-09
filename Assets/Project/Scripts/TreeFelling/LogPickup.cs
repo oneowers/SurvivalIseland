@@ -33,7 +33,7 @@ namespace ProjectResonance.TreeFelling
         private float _followLerpSpeed = 16f;
 
         private IInventoryWriteService _inventoryWriteService;
-        private PlayerWeightState _playerWeightState;
+        private PlayerWeightRuntime _playerWeightRuntime;
         private IPlayerCarryAnchor _playerCarryAnchor;
         private ObjectPool<LogPickup> _ownerPool;
 
@@ -44,11 +44,11 @@ namespace ProjectResonance.TreeFelling
         [Inject]
         private void Construct(
             IInventoryWriteService inventoryWriteService,
-            PlayerWeightState playerWeightState,
+            PlayerWeightRuntime playerWeightRuntime,
             IPlayerCarryAnchor playerCarryAnchor)
         {
             _inventoryWriteService = inventoryWriteService;
-            _playerWeightState = playerWeightState;
+            _playerWeightRuntime = playerWeightRuntime;
             _playerCarryAnchor = playerCarryAnchor;
         }
 
@@ -151,25 +151,25 @@ namespace ProjectResonance.TreeFelling
 
         private Vector3 ResolveCarryOffset()
         {
-            var currentWeight = _playerWeightState != null ? _playerWeightState.CurrentWeight : PlayerWeightType.Empty;
+            var currentWeight = _playerWeightRuntime != null ? _playerWeightRuntime.CurrentWeight : PlayerWeightType.Empty;
             return currentWeight == PlayerWeightType.HeavyLog ? _secondaryCarryLocalPosition : _primaryCarryLocalPosition;
         }
 
         private void UpdateWeightState()
         {
-            if (_playerWeightState == null)
+            if (_playerWeightRuntime == null)
             {
                 return;
             }
 
-            switch (_playerWeightState.CurrentWeight)
+            switch (_playerWeightRuntime.CurrentWeight)
             {
                 case PlayerWeightType.Empty:
                 case PlayerWeightType.LightItem:
-                    _playerWeightState.SetWeight(PlayerWeightType.HeavyLog);
+                    _playerWeightRuntime.SetWeight(PlayerWeightType.HeavyLog);
                     break;
                 case PlayerWeightType.HeavyLog:
-                    _playerWeightState.SetWeight(PlayerWeightType.TwoLogs);
+                    _playerWeightRuntime.SetWeight(PlayerWeightType.TwoLogs);
                     break;
             }
         }

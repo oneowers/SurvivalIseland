@@ -1,71 +1,28 @@
 // Path: Assets/Project/Scpripts/DayNight/TemperatureSystem.cs
-// Purpose: Applies time-of-day based thermal damage and healing by publishing health-affecting events.
-// Dependencies: UniTask, MessagePipe, VContainer, ICampfireService, TimeOfDayChangedEvent, PlayerInSafeZoneEvent.
+// Purpose: Applies time-of-day based thermal damage and healing directly through the health service.
+// Dependencies: UniTask, VContainer, ICampfireService, DayNightSystem, CampfireProtectionZone, IHealthService.
 
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.Campfire;
+using ProjectResonance.Health;
 using UnityEngine;
 using VContainer.Unity;
 
 namespace ProjectResonance.DayNight
 {
     /// <summary>
-    /// Event emitted when temperature should damage the player.
-    /// </summary>
-    public readonly struct ThermalDamageEvent
-    {
-        /// <summary>
-        /// Creates a new thermal damage event.
-        /// </summary>
-        /// <param name="amount">Damage amount to apply.</param>
-        public ThermalDamageEvent(float amount)
-        {
-            Amount = amount;
-        }
-
-        /// <summary>
-        /// Gets the damage amount.
-        /// </summary>
-        public float Amount { get; }
-    }
-
-    /// <summary>
-    /// Event emitted when temperature should heal the player.
-    /// </summary>
-    public readonly struct ThermalHealEvent
-    {
-        /// <summary>
-        /// Creates a new thermal healing event.
-        /// </summary>
-        /// <param name="amount">Healing amount to apply.</param>
-        public ThermalHealEvent(float amount)
-        {
-            Amount = amount;
-        }
-
-        /// <summary>
-        /// Gets the healing amount.
-        /// </summary>
-        public float Amount { get; }
-    }
-
-    /// <summary>
     /// Runtime system that evaluates thermal pressure from current time-of-day conditions.
     /// </summary>
     public sealed class TemperatureSystem : IStartable, IDisposable
     {
         private readonly ICampfireService _campfireService;
-        private readonly ISubscriber<TimeOfDayChangedEvent> _timeOfDayChangedSubscriber;
-        private readonly IBufferedSubscriber<PlayerInSafeZoneEvent> _playerInSafeZoneSubscriber;
-        private readonly IPublisher<ThermalDamageEvent> _thermalDamagePublisher;
-        private readonly IPublisher<ThermalHealEvent> _thermalHealPublisher;
+        private readonly DayNightSystem _dayNightSystem;
+        private readonly CampfireProtectionZone _campfireProtectionZone;
+        private readonly IHealthService _healthService;
 
         private CancellationTokenSource _loopCancellation;
-        private IDisposable _timeOfDaySubscription;
-        private IDisposable _safeZoneSubscription;
         private TimeOfDay _currentTimeOfDay = TimeOfDay.Dawn;
         private bool _isPlayerInSafeZone;
         private float _coldTimer;
@@ -76,22 +33,16 @@ namespace ProjectResonance.DayNight
         /// Creates the runtime temperature system.
         /// </summary>
         /// <param name="campfireService">Campfire runtime service.</param>
-        /// <param name="timeOfDayChangedSubscriber">Time-of-day phase subscriber.</param>
-        /// <param name="playerInSafeZoneSubscriber">Campfire safe-zone subscriber.</param>
-        /// <param name="thermalDamagePublisher">Thermal damage publisher.</param>
-        /// <param name="thermalHealPublisher">Thermal healing publisher.</param>
         public TemperatureSystem(
             ICampfireService campfireService,
-            ISubscriber<TimeOfDayChangedEvent> timeOfDayChangedSubscriber,
-            IBufferedSubscriber<PlayerInSafeZoneEvent> playerInSafeZoneSubscriber,
-            IPublisher<ThermalDamageEvent> thermalDamagePublisher,
-            IPublisher<ThermalHealEvent> thermalHealPublisher)
+            DayNightSystem dayNightSystem,
+            CampfireProtectionZone campfireProtectionZone,
+            IHealthService healthService)
         {
             _campfireService = campfireService;
-            _timeOfDayChangedSubscriber = timeOfDayChangedSubscriber;
-            _playerInSafeZoneSubscriber = playerInSafeZoneSubscriber;
-            _thermalDamagePublisher = thermalDamagePublisher;
-            _thermalHealPublisher = thermalHealPublisher;
+            _dayNightSystem = dayNightSystem;
+            _campfireProtectionZone = campfireProtectionZone;
+            _healthService = healthService;
         }
 
         /// <summary>
@@ -99,8 +50,16 @@ namespace ProjectResonance.DayNight
         /// </summary>
         public void Start()
         {
-            _timeOfDaySubscription = _timeOfDayChangedSubscriber.Subscribe(OnTimeOfDayChanged);
-            _safeZoneSubscription = _playerInSafeZoneSubscriber.Subscribe(OnPlayerInSafeZoneChanged);
+            if (_dayNightSystem != null)
+            {
+                _currentTimeOfDay = _dayNightSystem.CurrentTimeOfDay;
+                _dayNightSystem.TimeOfDayChanged += OnTimeOfDayChanged;
+            }
+
+            if (_campfireProtectionZone != null)
+            {
+                _campfireProtectionZone.PlayerSafeZoneChanged += OnPlayerInSafeZoneChanged;
+            }
 
             _loopCancellation = new CancellationTokenSource();
             RunThermalLoopAsync(_loopCancellation.Token).Forget();
@@ -111,8 +70,15 @@ namespace ProjectResonance.DayNight
         /// </summary>
         public void Dispose()
         {
-            _timeOfDaySubscription?.Dispose();
-            _safeZoneSubscription?.Dispose();
+            if (_dayNightSystem != null)
+            {
+                _dayNightSystem.TimeOfDayChanged -= OnTimeOfDayChanged;
+            }
+
+            if (_campfireProtectionZone != null)
+            {
+                _campfireProtectionZone.PlayerSafeZoneChanged -= OnPlayerInSafeZoneChanged;
+            }
 
             if (_loopCancellation == null)
             {
@@ -154,7 +120,7 @@ namespace ProjectResonance.DayNight
                 while (_campfireHealTimer >= 10f)
                 {
                     _campfireHealTimer -= 10f;
-                    _thermalHealPublisher.Publish(new ThermalHealEvent(2f));
+                    _healthService?.ApplyHealing(2f);
                 }
             }
             else
@@ -168,7 +134,7 @@ namespace ProjectResonance.DayNight
                 while (_coldTimer >= 60f)
                 {
                     _coldTimer -= 60f;
-                    _thermalDamagePublisher.Publish(new ThermalDamageEvent(2f));
+                    _healthService?.ApplyDamage(2f);
                 }
             }
             else
@@ -182,7 +148,7 @@ namespace ProjectResonance.DayNight
                 while (_heatTimer >= 60f)
                 {
                     _heatTimer -= 60f;
-                    _thermalDamagePublisher.Publish(new ThermalDamageEvent(1f));
+                    _healthService?.ApplyDamage(1f);
                 }
             }
             else

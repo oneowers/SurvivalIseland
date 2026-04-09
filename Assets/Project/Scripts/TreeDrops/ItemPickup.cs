@@ -412,13 +412,11 @@ namespace ProjectResonance.TreeDrops
 
             if (_itemDefinition == null)
             {
-                Debug.LogError("[ItemPickup] Collect failed because no ItemDefinition is assigned.", this);
                 return;
             }
 
             if (_inventorySystem == null)
             {
-                Debug.LogError("[ItemPickup] Collect failed because InventorySystem was not injected. Check ProjectBootstrapLifetimeScope / DI wiring.", this);
                 return;
             }
 

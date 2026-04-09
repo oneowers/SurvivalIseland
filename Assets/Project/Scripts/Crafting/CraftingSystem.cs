@@ -1,12 +1,11 @@
 // Path: Assets/Project/Scpripts/Crafting/CraftingSystem.cs
 // Purpose: Validates world-space held-item recipes, executes crafting, and spawns crafted output previews.
-// Dependencies: UniTask, MessagePipe, UnityEngine.Pool, VContainer, Inventory, Campfire, PlayerInput.
+// Dependencies: UniTask, UnityEngine.Pool, VContainer, Inventory, Campfire, PlayerInput.
 
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.Campfire;
 using ProjectResonance.Inventory;
 using ProjectResonance.PlayerInput;
@@ -139,19 +138,25 @@ namespace ProjectResonance.Crafting
         private readonly InventorySystem _inventorySystem;
         private readonly IItemVisualFactory _itemVisualFactory;
         private readonly HeldItemController _heldItemController;
-        private readonly ISubscriber<CraftInput> _craftInputSubscriber;
-        private readonly IPublisher<CraftSuccessEvent> _craftSuccessPublisher;
-        private readonly IPublisher<CraftFailEvent> _craftFailPublisher;
-        private readonly CampfireAnchor _campfireAnchor;
-        private readonly CampfireState _campfireState;
+        private readonly PlayerInputHandler _playerInputHandler;
+        private readonly ICampfireService _campfireService;
         private readonly List<CraftingRecipe> _knownRecipes;
         private readonly ItemDefinition[] _heldInputsBuffer;
         private readonly Dictionary<ItemDefinition, ObjectPool<GameObject>> _previewPoolByItemDefinition;
         private readonly Dictionary<GameObject, ObjectPool<GameObject>> _ownerPoolByPreviewInstance;
 
-        private IDisposable _craftInputSubscription;
         private CancellationTokenSource _disposeCancellation;
         private bool _isCrafting;
+
+        /// <summary>
+        /// Raised when crafting succeeds.
+        /// </summary>
+        public event Action<CraftSuccessEvent> CraftSucceeded;
+
+        /// <summary>
+        /// Raised when crafting fails.
+        /// </summary>
+        public event Action<CraftFailEvent> CraftFailed;
 
         /// <summary>
         /// Creates the world-space crafting system.
@@ -160,34 +165,25 @@ namespace ProjectResonance.Crafting
         /// <param name="inventoryConfig">Shared inventory authoring config.</param>
         /// <param name="itemVisualFactory">Shared visual factory used for safe preview creation.</param>
         /// <param name="heldItemController">Held item controller.</param>
-        /// <param name="craftInputSubscriber">Craft input subscriber.</param>
-        /// <param name="craftSuccessPublisher">Craft success publisher.</param>
-        /// <param name="craftFailPublisher">Craft fail publisher.</param>
         /// <param name="recipeDatabase">Optional recipe database asset.</param>
-        /// <param name="campfireAnchor">Optional campfire anchor reference.</param>
-        /// <param name="campfireState">Optional campfire runtime state.</param>
+        /// <param name="playerInputHandler">Shared input source.</param>
+        /// <param name="resolver">Resolver used for optional cross-scope services.</param>
         public CraftingSystem(
             InventorySystem inventorySystem,
             InventoryConfig inventoryConfig,
             IItemVisualFactory itemVisualFactory,
             HeldItemController heldItemController,
-            ISubscriber<CraftInput> craftInputSubscriber,
-            IPublisher<CraftSuccessEvent> craftSuccessPublisher,
-            IPublisher<CraftFailEvent> craftFailPublisher,
             RecipeDatabase recipeDatabase = null,
-            CampfireAnchor campfireAnchor = null,
-            CampfireState campfireState = null)
+            PlayerInputHandler playerInputHandler = null,
+            IObjectResolver resolver = null)
         {
             _inventorySystem = inventorySystem;
             _inventoryConfig = inventoryConfig;
             _itemVisualFactory = itemVisualFactory;
             _heldItemController = heldItemController;
-            _craftInputSubscriber = craftInputSubscriber;
-            _craftSuccessPublisher = craftSuccessPublisher;
-            _craftFailPublisher = craftFailPublisher;
             _recipeDatabase = recipeDatabase;
-            _campfireAnchor = campfireAnchor;
-            _campfireState = campfireState;
+            _playerInputHandler = playerInputHandler;
+            _campfireService = resolver.ResolveOrDefault<ICampfireService>();
             _knownRecipes = new List<CraftingRecipe>();
             _heldInputsBuffer = new ItemDefinition[2];
             _previewPoolByItemDefinition = new Dictionary<ItemDefinition, ObjectPool<GameObject>>();
@@ -217,7 +213,10 @@ namespace ProjectResonance.Crafting
         public void Start()
         {
             _disposeCancellation = new CancellationTokenSource();
-            _craftInputSubscription = _craftInputSubscriber.Subscribe(_ => TryCraftAsync(_disposeCancellation.Token).Forget());
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.CraftPerformed += OnCraftRequested;
+            }
         }
 
         /// <summary>
@@ -225,8 +224,10 @@ namespace ProjectResonance.Crafting
         /// </summary>
         public void Dispose()
         {
-            _craftInputSubscription?.Dispose();
-            _craftInputSubscription = null;
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.CraftPerformed -= OnCraftRequested;
+            }
 
             if (_disposeCancellation != null)
             {
@@ -242,6 +243,16 @@ namespace ProjectResonance.Crafting
 
             _previewPoolByItemDefinition.Clear();
             _ownerPoolByPreviewInstance.Clear();
+        }
+
+        private void OnCraftRequested(CraftInput _)
+        {
+            if (_disposeCancellation == null)
+            {
+                return;
+            }
+
+            TryCraftAsync(_disposeCancellation.Token).Forget();
         }
 
         /// <summary>
@@ -319,7 +330,7 @@ namespace ProjectResonance.Crafting
 
                 _heldItemController.ClearHeldItems();
                 SpawnCraftedPreview(recipe.OutputItem, cancellationToken).Forget();
-                _craftSuccessPublisher.Publish(new CraftSuccessEvent(recipe, recipe.OutputItem, recipe.OutputCount));
+                CraftSucceeded?.Invoke(new CraftSuccessEvent(recipe, recipe.OutputItem, recipe.OutputCount));
                 return true;
             }
             catch (OperationCanceledException)
@@ -378,21 +389,21 @@ namespace ProjectResonance.Crafting
 
             if (recipe.RequiresCampfire)
             {
-                if (_campfireAnchor == null || _campfireState == null || !_campfireState.IsLit)
+                if (_campfireService == null || !_campfireService.IsLit)
                 {
                     failureReason = CraftFailureReason.CampfireRequired;
                     return false;
                 }
 
                 var craftRadius = _recipeDatabase != null ? _recipeDatabase.CampfireCraftRadius : 0f;
-                var distanceToCampfire = Vector3.Distance(_heldItemController.transform.position, _campfireAnchor.FirePoint.position);
+                var distanceToCampfire = Vector3.Distance(_heldItemController.transform.position, _campfireService.Position);
                 if (craftRadius <= 0f || distanceToCampfire > craftRadius)
                 {
                     failureReason = CraftFailureReason.CampfireRequired;
                     return false;
                 }
 
-                if (_campfireState.Level < recipe.MinimumLevel)
+                if (_campfireService.Level < recipe.MinimumLevel)
                 {
                     failureReason = CraftFailureReason.CampfireLevelTooLow;
                     return false;
@@ -639,7 +650,7 @@ namespace ProjectResonance.Crafting
 
         private void PublishFailure(CraftingRecipe recipe, CraftFailureReason reason)
         {
-            _craftFailPublisher.Publish(new CraftFailEvent(recipe, reason));
+            CraftFailed?.Invoke(new CraftFailEvent(recipe, reason));
         }
 
         private static int CountNonNullInputs(ItemDefinition[] inputs)

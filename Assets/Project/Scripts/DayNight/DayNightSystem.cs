@@ -1,11 +1,10 @@
 // Path: Assets/Project/Scpripts/DayNight/DayNightSystem.cs
-// Purpose: Owns the 20-minute global day cycle, publishes time events, and supports sleeping to morning.
-// Dependencies: UniTask, MessagePipe, VContainer, DayNightConfig.
+// Purpose: Owns the 20-minute global day cycle, exposes time events, and supports sleeping to morning.
+// Dependencies: UniTask, VContainer, DayNightConfig.
 
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using UnityEngine;
 using VContainer.Unity;
 
@@ -162,9 +161,6 @@ namespace ProjectResonance.DayNight
         private const float SunsetWarningLeadGameSeconds = 4f * 60f;
 
         private readonly DayNightConfig _config;
-        private readonly IBufferedPublisher<TimeTickEvent> _timeTickPublisher;
-        private readonly IBufferedPublisher<TimeOfDayChangedEvent> _timeOfDayChangedPublisher;
-        private readonly IPublisher<SunsetWarningEvent> _sunsetWarningPublisher;
 
         private readonly TimeOfDayPhase[] _phases;
 
@@ -179,19 +175,9 @@ namespace ProjectResonance.DayNight
         /// Creates the runtime day/night system.
         /// </summary>
         /// <param name="config">Authored day/night configuration.</param>
-        /// <param name="timeTickPublisher">Buffered clock tick publisher.</param>
-        /// <param name="timeOfDayChangedPublisher">Buffered phase publisher.</param>
-        /// <param name="sunsetWarningPublisher">Sunset warning publisher.</param>
-        public DayNightSystem(
-            DayNightConfig config,
-            IBufferedPublisher<TimeTickEvent> timeTickPublisher,
-            IBufferedPublisher<TimeOfDayChangedEvent> timeOfDayChangedPublisher,
-            IPublisher<SunsetWarningEvent> sunsetWarningPublisher)
+        public DayNightSystem(DayNightConfig config)
         {
             _config = config;
-            _timeTickPublisher = timeTickPublisher;
-            _timeOfDayChangedPublisher = timeOfDayChangedPublisher;
-            _sunsetWarningPublisher = sunsetWarningPublisher;
             _phases = CloneAndSortPhases(config != null ? config.Phases : null);
 
             _currentGameSeconds = ResolvePhaseStart(TimeOfDay.Dawn) * FullGameDaySeconds;
@@ -215,6 +201,21 @@ namespace ProjectResonance.DayNight
         /// Gets the current phase.
         /// </summary>
         public TimeOfDay CurrentTimeOfDay { get; private set; }
+
+        /// <summary>
+        /// Raised on each clock tick snapshot.
+        /// </summary>
+        public event Action<TimeTickEvent> TimeTicked;
+
+        /// <summary>
+        /// Raised whenever the time-of-day phase changes.
+        /// </summary>
+        public event Action<TimeOfDayChangedEvent> TimeOfDayChanged;
+
+        /// <summary>
+        /// Raised when sunset is approaching.
+        /// </summary>
+        public event Action<SunsetWarningEvent> SunsetWarningRaised;
 
         /// <summary>
         /// Starts the background clock loop.
@@ -303,7 +304,7 @@ namespace ProjectResonance.DayNight
             {
                 var tickNormalized = Mathf.Repeat(_nextTickGameSeconds / FullGameDaySeconds, 1f);
                 var tickPhase = EvaluateTimeOfDay(tickNormalized);
-                _timeTickPublisher.Publish(new TimeTickEvent(tickNormalized, _nextTickGameSeconds, tickPhase));
+                TimeTicked?.Invoke(new TimeTickEvent(tickNormalized, _nextTickGameSeconds, tickPhase));
 
                 _nextTickGameSeconds = Mathf.Repeat(_nextTickGameSeconds + TickIntervalGameSeconds, FullGameDaySeconds);
                 guard++;
@@ -328,7 +329,7 @@ namespace ProjectResonance.DayNight
 
                 var previousTimeOfDay = CurrentTimeOfDay;
                 CurrentTimeOfDay = phase.Label;
-                _timeOfDayChangedPublisher.Publish(new TimeOfDayChangedEvent(previousTimeOfDay, CurrentTimeOfDay, phase.StartNormalized));
+                TimeOfDayChanged?.Invoke(new TimeOfDayChangedEvent(previousTimeOfDay, CurrentTimeOfDay, phase.StartNormalized));
             }
         }
 
@@ -345,13 +346,13 @@ namespace ProjectResonance.DayNight
             }
 
             _hasPublishedSunsetWarningThisCycle = true;
-            _sunsetWarningPublisher.Publish(new SunsetWarningEvent(CurrentTimeNormalized, SunsetWarningLeadGameSeconds));
+            SunsetWarningRaised?.Invoke(new SunsetWarningEvent(CurrentTimeNormalized, SunsetWarningLeadGameSeconds));
         }
 
         private void PublishCurrentSnapshot(TimeOfDay previousTimeOfDay)
         {
-            _timeTickPublisher.Publish(new TimeTickEvent(CurrentTimeNormalized, _currentGameSeconds, CurrentTimeOfDay));
-            _timeOfDayChangedPublisher.Publish(new TimeOfDayChangedEvent(previousTimeOfDay, CurrentTimeOfDay, CurrentTimeNormalized));
+            TimeTicked?.Invoke(new TimeTickEvent(CurrentTimeNormalized, _currentGameSeconds, CurrentTimeOfDay));
+            TimeOfDayChanged?.Invoke(new TimeOfDayChangedEvent(previousTimeOfDay, CurrentTimeOfDay, CurrentTimeNormalized));
         }
 
         private TimeOfDay EvaluateTimeOfDay(float normalizedTime)

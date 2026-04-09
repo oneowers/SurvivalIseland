@@ -17,6 +17,8 @@ MonoBehaviour:
   _crouchSpeedMultiplier: 0.5
   _accelerationTime: 0.1
   _directionChangeTime: 0.18
+  _moveInputDeadzone: 0.18
+  _stopVelocityThreshold: 0.08
   _stopTimeEmpty: 0.1
   _stopTimeLightItem: 0.2
   _stopTimeHeavyLog: 0.4

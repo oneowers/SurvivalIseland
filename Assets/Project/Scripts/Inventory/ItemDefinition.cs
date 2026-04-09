@@ -284,7 +284,6 @@ namespace ProjectResonance.Inventory
             }
             catch (MissingReferenceException)
             {
-                Debug.LogWarning($"[ItemDefinition] PlantSpawnPrefab reference is missing on item '{DisplayName}'. Reassign '_plantSpawnPrefab' in the inspector.", this);
                 plantSpawnPrefab = null;
                 return false;
             }
@@ -338,7 +337,6 @@ namespace ProjectResonance.Inventory
             }
             catch (MissingReferenceException)
             {
-                Debug.LogWarning($"[ItemDefinition] WorldPrefab reference is missing on item '{DisplayName}'. Reassign '_worldPrefab' in the inspector.", this);
                 worldPrefab = null;
                 return false;
             }

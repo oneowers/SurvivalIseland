@@ -1,10 +1,9 @@
 // Path: Assets/Project/Scpripts/Player/ThirdPersonCameraSystem.cs
 // Purpose: Controls an over-the-shoulder third-person camera with lag, zoom, sprint offset and wall x-ray fading.
-// Dependencies: MessagePipe, PlayerInput, PlayerWeight, Unity Input System, UnityEngine, VContainer.
+// Dependencies: PlayerInput, PlayerWeight, Unity Input System, UnityEngine, VContainer.
 
 using System;
 using System.Collections.Generic;
-using MessagePipe;
 using ProjectResonance.MobileControls;
 using ProjectResonance.PlayerInput;
 using ProjectResonance.PlayerWeight;
@@ -205,16 +204,12 @@ namespace ProjectResonance.ThirdPersonCamera
         private readonly CameraConfig _config;
         private readonly MobileControlsConfig _mobileControlsConfig;
         private readonly IMobileModeService _mobileModeService;
-        private readonly PlayerWeightState _weightState;
-        private readonly IBufferedSubscriber<SprintInput> _sprintInputSubscriber;
-        private readonly IBufferedSubscriber<WeightChangedEvent> _weightChangedSubscriber;
+        private readonly PlayerWeightRuntime _weightRuntime;
+        private readonly PlayerInputHandler _playerInputHandler;
 
         private readonly Dictionary<Renderer, OccluderState> _occluderStates = new Dictionary<Renderer, OccluderState>();
         private readonly HashSet<Renderer> _visibleOccluders = new HashSet<Renderer>();
         private readonly List<Renderer> _cleanupBuffer = new List<Renderer>();
-
-        private IDisposable _sprintSubscription;
-        private IDisposable _weightSubscription;
 
         private Vector3 _followPosition;
         private Vector3 _followVelocity;
@@ -232,27 +227,24 @@ namespace ProjectResonance.ThirdPersonCamera
         /// <param name="config">Camera configuration.</param>
         /// <param name="mobileControlsConfig">Mobile UI and camera configuration.</param>
         /// <param name="mobileModeService">Mobile mode state service.</param>
-        /// <param name="weightState">Runtime weight state.</param>
-        /// <param name="sprintInputSubscriber">Sprint subscriber.</param>
-        /// <param name="weightChangedSubscriber">Weight state subscriber.</param>
+        /// <param name="weightRuntime">Runtime weight state.</param>
+        /// <param name="playerInputHandler">Shared player input source.</param>
         public ThirdPersonCameraSystem(
             Camera playerCamera,
             PlayerCameraTarget cameraTarget,
             CameraConfig config,
             MobileControlsConfig mobileControlsConfig,
             IMobileModeService mobileModeService,
-            PlayerWeightState weightState,
-            IBufferedSubscriber<SprintInput> sprintInputSubscriber,
-            IBufferedSubscriber<WeightChangedEvent> weightChangedSubscriber)
+            PlayerWeightRuntime weightRuntime,
+            PlayerInputHandler playerInputHandler)
         {
             _playerCamera = playerCamera;
             _cameraTarget = cameraTarget;
             _config = config;
             _mobileControlsConfig = mobileControlsConfig;
             _mobileModeService = mobileModeService;
-            _weightState = weightState;
-            _sprintInputSubscriber = sprintInputSubscriber;
-            _weightChangedSubscriber = weightChangedSubscriber;
+            _weightRuntime = weightRuntime;
+            _playerInputHandler = playerInputHandler;
         }
 
         /// <summary>
@@ -260,7 +252,7 @@ namespace ProjectResonance.ThirdPersonCamera
         /// </summary>
         public void Start()
         {
-            if (_playerCamera == null || _cameraTarget == null || _config == null || _weightState == null)
+            if (_playerCamera == null || _cameraTarget == null || _config == null || _weightRuntime == null)
             {
                 return;
             }
@@ -270,10 +262,15 @@ namespace ProjectResonance.ThirdPersonCamera
             _pitch = NormalizePitch(eulerAngles.x);
             _followPosition = _cameraTarget.FollowPosition;
             _zoomDistance = Mathf.Clamp(_config.NormalDistance, _config.MinZoomDistance, _config.MaxZoomDistance);
-            _currentWeight = _weightState.CurrentWeight;
+            _currentWeight = _weightRuntime.CurrentWeight;
+            _isSprintPressed = _playerInputHandler != null && _playerInputHandler.IsSprintPressed;
 
-            _sprintSubscription = _sprintInputSubscriber.Subscribe(OnSprintInputChanged);
-            _weightSubscription = _weightChangedSubscriber.Subscribe(OnWeightChanged);
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.SprintInputChanged += OnSprintInputChanged;
+            }
+
+            _weightRuntime.WeightChanged += OnWeightChanged;
         }
 
         /// <summary>
@@ -303,10 +300,15 @@ namespace ProjectResonance.ThirdPersonCamera
         /// </summary>
         public void Dispose()
         {
-            _sprintSubscription?.Dispose();
-            _sprintSubscription = null;
-            _weightSubscription?.Dispose();
-            _weightSubscription = null;
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.SprintInputChanged -= OnSprintInputChanged;
+            }
+
+            if (_weightRuntime != null)
+            {
+                _weightRuntime.WeightChanged -= OnWeightChanged;
+            }
 
             foreach (var pair in _occluderStates)
             {

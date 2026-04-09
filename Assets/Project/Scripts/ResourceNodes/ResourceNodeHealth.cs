@@ -184,9 +184,6 @@ namespace ProjectResonance.ResourceNodes
             var hasPickupSource = _itemPickupPoolService != null || _itemPickupPrefab != null;
             if (!hasPickupSource || dropItemDefinition == null || dropCount <= 0)
             {
-                Debug.LogWarning(
-                    $"[ResourceNodeHealth] SpawnDrops aborted. PickupSourceAssigned={hasPickupSource}, DropItemAssigned={dropItemDefinition != null}, DropCount={dropCount}",
-                    this);
                 return;
             }
 
@@ -198,7 +195,6 @@ namespace ProjectResonance.ResourceNodes
                 var itemPickup = SpawnPickupInstance(spawnPosition);
                 if (itemPickup == null)
                 {
-                    Debug.LogError("[ResourceNodeHealth] Spawned drop prefab is missing ItemPickup.", this);
                     continue;
                 }
 

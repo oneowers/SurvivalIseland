@@ -1,11 +1,11 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireProtectionZone.cs
-// Purpose: Periodically scans the campfire safe zone and publishes player/ghost presence events.
-// Dependencies: UniTask, MessagePipe, Physics, PlayerSurvivor, GhostBase, UnityEngine, VContainer.
+// Purpose: Periodically scans the campfire safe zone and exposes player/ghost presence through explicit events.
+// Dependencies: UniTask, Physics, PlayerSurvivor, GhostBase, UnityEngine, VContainer.
 
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.Ghosts;
 using ProjectResonance.Health;
 using UnityEngine;
@@ -74,28 +74,32 @@ namespace ProjectResonance.Campfire
 
         private readonly List<GhostBase> _ghostBuffer = new List<GhostBase>(16);
 
-        private CampfireState _campfireState;
+        private ICampfireService _campfireService;
         private CampfireAnchor _campfireAnchor;
         private PlayerSurvivor _playerSurvivor;
-        private IBufferedPublisher<PlayerInSafeZoneEvent> _playerInSafeZonePublisher;
-        private IPublisher<GhostInLightEvent> _ghostInLightPublisher;
         private Collider[] _overlapResults;
         private bool _wasPlayerInside;
         private bool _hasPublishedPlayerState;
 
+        /// <summary>
+        /// Raised when the player enters or leaves the safe zone.
+        /// </summary>
+        public event Action<PlayerInSafeZoneEvent> PlayerSafeZoneChanged;
+
+        /// <summary>
+        /// Raised when a ghost is detected inside the light radius.
+        /// </summary>
+        public event Action<GhostInLightEvent> GhostDetectedInLight;
+
         [Inject]
         private void Construct(
-            CampfireState campfireState,
+            ICampfireService campfireService,
             CampfireAnchor campfireAnchor,
-            PlayerSurvivor playerSurvivor,
-            IBufferedPublisher<PlayerInSafeZoneEvent> playerInSafeZonePublisher,
-            IPublisher<GhostInLightEvent> ghostInLightPublisher)
+            PlayerSurvivor playerSurvivor)
         {
-            _campfireState = campfireState;
+            _campfireService = campfireService;
             _campfireAnchor = campfireAnchor;
             _playerSurvivor = playerSurvivor;
-            _playerInSafeZonePublisher = playerInSafeZonePublisher;
-            _ghostInLightPublisher = ghostInLightPublisher;
         }
 
         private void Awake()
@@ -125,32 +129,32 @@ namespace ProjectResonance.Campfire
 
         private void ScanProtectionZone()
         {
-            if (_campfireState == null || _campfireAnchor == null || _playerSurvivor == null)
+            if (_campfireService == null || _campfireAnchor == null || _playerSurvivor == null)
             {
                 return;
             }
 
-            if (!_campfireState.IsLit || _campfireState.ProtectionRadius <= 0f)
+            if (!_campfireService.IsLit || _campfireService.ProtectionRadius <= 0f)
             {
                 if (_wasPlayerInside || !_hasPublishedPlayerState)
                 {
                     _wasPlayerInside = false;
                     _hasPublishedPlayerState = true;
-                    _playerInSafeZonePublisher?.Publish(new PlayerInSafeZoneEvent(false));
+                    PlayerSafeZoneChanged?.Invoke(new PlayerInSafeZoneEvent(false));
                 }
 
                 return;
             }
 
             var center = _campfireAnchor.FirePoint.position;
-            var radius = _campfireState.ProtectionRadius;
+            var radius = _campfireService.ProtectionRadius;
             var isPlayerInside = IsInsideSafeZone(center, radius);
 
             if (!_hasPublishedPlayerState || isPlayerInside != _wasPlayerInside)
             {
                 _wasPlayerInside = isPlayerInside;
                 _hasPublishedPlayerState = true;
-                _playerInSafeZonePublisher?.Publish(new PlayerInSafeZoneEvent(isPlayerInside));
+                PlayerSafeZoneChanged?.Invoke(new PlayerInSafeZoneEvent(isPlayerInside));
             }
 
             var hitCount = Physics.OverlapSphereNonAlloc(
@@ -172,7 +176,7 @@ namespace ProjectResonance.Campfire
                 }
 
                 _ghostBuffer.Add(ghost);
-                _ghostInLightPublisher?.Publish(new GhostInLightEvent(ghost));
+                GhostDetectedInLight?.Invoke(new GhostInLightEvent(ghost));
             }
         }
 

@@ -46,7 +46,6 @@ namespace ProjectResonance.TreeDrops
             var pickupPrefab = ResolvePickupPrefab(prefabOverride);
             if (pickupPrefab == null)
             {
-                Debug.LogWarning("[ItemPickupPoolService] Failed to resolve a pickup prefab. Assign WorldItemPickupConfig.PickupPrefab or provide a prefab override.");
                 return null;
             }
 

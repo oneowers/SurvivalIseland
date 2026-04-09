@@ -1,12 +1,10 @@
 // Path: Assets/Project/Scripts/ResourceNodes/ResourceNodeRuntime.cs
 // Purpose: Tracks runtime hit state for any authored resource node and coordinates generic damage, audio, and destroy events.
-// Dependencies: MessagePipe, UnityEngine, VContainer, ProjectResonance.TreeFelling, ProjectResonance.ResourceNodes.
+// Dependencies: UnityEngine, VContainer, ProjectResonance.TreeFelling, ProjectResonance.ResourceNodes.
 
 using System;
-using MessagePipe;
 using ProjectResonance.TreeFelling;
 using UnityEngine;
-using VContainer;
 
 namespace ProjectResonance.ResourceNodes
 {
@@ -21,17 +19,8 @@ namespace ProjectResonance.ResourceNodes
     public sealed class ResourceNodeRuntime : MonoBehaviour
     {
         [SerializeField]
-        private bool _enableDebugLogs = true;
-
-        [SerializeField]
         private Transform[] _hitPoints;
 
-        private IPublisher<ResourceHitEvent> _resourceHitPublisher;
-        private IPublisher<ResourceDestroyedEvent> _resourceDestroyedPublisher;
-        private IPublisher<SoundEvent> _soundPublisher;
-        private ISubscriber<ResourceHitRequestEvent> _hitRequestSubscriber;
-
-        private IDisposable _hitRequestSubscription;
         private int _strikeCount;
         private int _lastHitPointIndex;
         private Vector3 _lastHitDirection;
@@ -39,6 +28,21 @@ namespace ProjectResonance.ResourceNodes
         private ResourceNodeInteraction _interaction;
         private ResourceNodeHealth _health;
         private ResourceNodeAuthoring _authoring;
+
+        /// <summary>
+        /// Raised when the node receives a hit.
+        /// </summary>
+        public event Action<ResourceHitEvent> HitReceived;
+
+        /// <summary>
+        /// Raised when the node is destroyed.
+        /// </summary>
+        public event Action<ResourceDestroyedEvent> Destroyed;
+
+        /// <summary>
+        /// Raised when the node wants to emit a sound.
+        /// </summary>
+        public event Action<SoundEvent> SoundEmitted;
 
         /// <summary>
         /// Gets the authored resource node data.
@@ -75,19 +79,6 @@ namespace ProjectResonance.ResourceNodes
         /// </summary>
         public bool IsDestroyed => _isDestroyed || (_health != null && _health.IsDestroyed);
 
-        [Inject]
-        private void Construct(
-            IPublisher<ResourceHitEvent> resourceHitPublisher,
-            IPublisher<ResourceDestroyedEvent> resourceDestroyedPublisher,
-            IPublisher<SoundEvent> soundPublisher,
-            ISubscriber<ResourceHitRequestEvent> hitRequestSubscriber)
-        {
-            _resourceHitPublisher = resourceHitPublisher;
-            _resourceDestroyedPublisher = resourceDestroyedPublisher;
-            _soundPublisher = soundPublisher;
-            _hitRequestSubscriber = hitRequestSubscriber;
-        }
-
         /// <summary>
         /// Applies incoming hit damage to the resource node.
         /// </summary>
@@ -97,11 +88,6 @@ namespace ProjectResonance.ResourceNodes
         {
             if (IsDestroyed || damage <= 0 || _health == null)
             {
-                if (_enableDebugLogs)
-                {
-                    Debug.LogWarning($"[ResourceNodeRuntime] Hit ignored. IsDestroyed={IsDestroyed}, HasHealth={_health != null}, Damage={damage}", this);
-                }
-
                 return;
             }
 
@@ -112,17 +98,12 @@ namespace ProjectResonance.ResourceNodes
             var hitSound = ResolveHitSound(_strikeCount - 1);
             if (hitSound != null)
             {
-                _soundPublisher.Publish(new SoundEvent("resource_hit", transform.position, hitSound));
+                SoundEmitted?.Invoke(new SoundEvent("resource_hit", transform.position, hitSound));
             }
 
             var damageResult = _health.TakeDamage(damage);
 
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[ResourceNodeRuntime] ReceiveHit. Damage={damage}, CurrentHealth={damageResult.CurrentHealth}/{damageResult.MaxHealth}, StrikeCount={_strikeCount}, LastHitDirection={_lastHitDirection}", this);
-            }
-
-            _resourceHitPublisher.Publish(new ResourceHitEvent(
+            HitReceived?.Invoke(new ResourceHitEvent(
                 this,
                 damageResult.CurrentHealth,
                 damageResult.MaxHealth,
@@ -145,10 +126,10 @@ namespace ProjectResonance.ResourceNodes
             var breakSound = ResolveBreakSound();
             if (breakSound != null)
             {
-                _soundPublisher.Publish(new SoundEvent("resource_break", transform.position, breakSound));
+                SoundEmitted?.Invoke(new SoundEvent("resource_break", transform.position, breakSound));
             }
 
-            _resourceDestroyedPublisher.Publish(new ResourceDestroyedEvent(this, _health.DropItemDefinition, _health.DropCount));
+            Destroyed?.Invoke(new ResourceDestroyedEvent(this, _health.DropItemDefinition, _health.DropCount));
         }
 
         /// <summary>
@@ -175,37 +156,11 @@ namespace ProjectResonance.ResourceNodes
         private void OnEnable()
         {
             EnsureReferences();
-
-            if (_hitRequestSubscriber != null)
-            {
-                _hitRequestSubscription = _hitRequestSubscriber.Subscribe(OnResourceHitRequested);
-            }
-        }
-
-        private void OnDisable()
-        {
-            _hitRequestSubscription?.Dispose();
-            _hitRequestSubscription = null;
         }
 
         private void Reset()
         {
             EnsureReferences();
-        }
-
-        private void OnResourceHitRequested(ResourceHitRequestEvent message)
-        {
-            if (message.Target != this)
-            {
-                return;
-            }
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[ResourceNodeRuntime] ResourceHitRequestEvent received. Damage={message.Damage}, Direction={message.HitDirection}", this);
-            }
-
-            ReceiveHit(message.HitDirection, message.Damage);
         }
 
         private Transform ResolveHitPoint(int index)

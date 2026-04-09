@@ -1,10 +1,9 @@
 // Path: Assets/Project/Scpripts/Inventory/HeldItemController.cs
 // Purpose: Visualizes up to two held items, supports dropping them into the world, and syncs player carry weight.
-// Dependencies: MessagePipe, UnityEngine.Pool, VContainer, InventorySystem, PlayerWeight.
+// Dependencies: UnityEngine.Pool, VContainer, InventorySystem, PlayerWeight.
 
 using System;
 using System.Collections.Generic;
-using MessagePipe;
 using ProjectResonance.PlayerWeight;
 using UnityEngine;
 using UnityEngine.Pool;
@@ -116,12 +115,7 @@ namespace ProjectResonance.Inventory
         private InventoryConfig _inventoryConfig;
         private InventorySystem _inventorySystem;
         private IItemVisualFactory _itemVisualFactory;
-        private PlayerWeightState _playerWeightState;
-        private IBufferedSubscriber<ActiveSlotChangedEvent> _activeSlotChangedSubscriber;
-        private IBufferedSubscriber<InventoryChangedEvent> _inventoryChangedSubscriber;
-
-        private IDisposable _activeSlotChangedSubscription;
-        private IDisposable _inventoryChangedSubscription;
+        private PlayerWeightRuntime _playerWeightRuntime;
         private HeldItemSlot _primarySlot;
         private HeldItemSlot _secondarySlot;
         private bool _suspendInventoryValidation;
@@ -163,28 +157,20 @@ namespace ProjectResonance.Inventory
             InventoryConfig inventoryConfig,
             InventorySystem inventorySystem,
             IItemVisualFactory itemVisualFactory,
-            PlayerWeightState playerWeightState,
-            IBufferedSubscriber<ActiveSlotChangedEvent> activeSlotChangedSubscriber,
-            IBufferedSubscriber<InventoryChangedEvent> inventoryChangedSubscriber)
+            PlayerWeightRuntime playerWeightRuntime)
         {
             _inventoryConfig = inventoryConfig;
             _inventorySystem = inventorySystem;
             _itemVisualFactory = itemVisualFactory;
-            _playerWeightState = playerWeightState;
-            _activeSlotChangedSubscriber = activeSlotChangedSubscriber;
-            _inventoryChangedSubscriber = inventoryChangedSubscriber;
+            _playerWeightRuntime = playerWeightRuntime;
         }
 
         private void Start()
         {
-            if (_activeSlotChangedSubscriber != null)
+            if (_inventorySystem != null)
             {
-                _activeSlotChangedSubscription = _activeSlotChangedSubscriber.Subscribe(OnActiveSlotChanged);
-            }
-
-            if (_inventoryChangedSubscriber != null)
-            {
-                _inventoryChangedSubscription = _inventoryChangedSubscriber.Subscribe(_ => OnInventoryChanged());
+                _inventorySystem.ActiveSlotChanged += OnActiveSlotChanged;
+                _inventorySystem.InventoryChanged += OnInventoryChanged;
             }
 
             UpdateWeightState();
@@ -192,8 +178,11 @@ namespace ProjectResonance.Inventory
 
         private void OnDestroy()
         {
-            _activeSlotChangedSubscription?.Dispose();
-            _inventoryChangedSubscription?.Dispose();
+            if (_inventorySystem != null)
+            {
+                _inventorySystem.ActiveSlotChanged -= OnActiveSlotChanged;
+                _inventorySystem.InventoryChanged -= OnInventoryChanged;
+            }
 
             ClearHeldItems();
 
@@ -318,7 +307,7 @@ namespace ProjectResonance.Inventory
             TryEquipItem(slot.ItemDefinition, message.CurrentSlotIndex);
         }
 
-        private void OnInventoryChanged()
+        private void OnInventoryChanged(InventoryChangedEvent _)
         {
             if (_suspendInventoryValidation)
             {
@@ -602,7 +591,7 @@ namespace ProjectResonance.Inventory
 
         private void UpdateWeightState()
         {
-            if (_playerWeightState == null)
+            if (_playerWeightRuntime == null)
             {
                 return;
             }
@@ -621,29 +610,29 @@ namespace ProjectResonance.Inventory
 
             if (HeldCount <= 0 || totalWeight <= 0f)
             {
-                _playerWeightState.SetWeight(PlayerWeightType.Empty);
+                _playerWeightRuntime.SetWeight(PlayerWeightType.Empty);
                 return;
             }
 
             if (totalWeight <= _lightWeightThreshold)
             {
-                _playerWeightState.SetWeight(PlayerWeightType.LightItem);
+                _playerWeightRuntime.SetWeight(PlayerWeightType.LightItem);
                 return;
             }
 
             if (HeldCount >= 2 || totalWeight >= _twoLogsWeightThreshold)
             {
-                _playerWeightState.SetWeight(PlayerWeightType.TwoLogs);
+                _playerWeightRuntime.SetWeight(PlayerWeightType.TwoLogs);
                 return;
             }
 
             if (totalWeight <= _heavyWeightThreshold)
             {
-                _playerWeightState.SetWeight(PlayerWeightType.HeavyLog);
+                _playerWeightRuntime.SetWeight(PlayerWeightType.HeavyLog);
                 return;
             }
 
-            _playerWeightState.SetWeight(PlayerWeightType.HeavyLog);
+            _playerWeightRuntime.SetWeight(PlayerWeightType.HeavyLog);
         }
 
         private Transform ResolvePrimaryAttachPoint()

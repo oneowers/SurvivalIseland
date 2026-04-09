@@ -1,11 +1,10 @@
 // Path: Assets/Project/Scpripts/Player/PlayerInputHandler.cs
-// Purpose: Collects player input from the new Input System and publishes it through MessagePipe.
-// Dependencies: MessagePipe, Unity Input System, UnityEngine.
+// Purpose: Collects player input from the new Input System and exposes it through explicit C# events.
+// Dependencies: Unity Input System, UnityEngine.
 
-using MessagePipe;
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using VContainer;
 
 namespace ProjectResonance.PlayerInput
 {
@@ -109,10 +108,6 @@ namespace ProjectResonance.PlayerInput
     /// </summary>
     public sealed class PlayerInputHandler : MonoBehaviour
     {
-        [Header("Debug")]
-        [SerializeField]
-        private bool _enableDebugLogs = true;
-
         [Header("Input Actions")]
         [SerializeField]
         private InputActionReference _moveAction;
@@ -135,14 +130,6 @@ namespace ProjectResonance.PlayerInput
         [SerializeField]
         private InputActionReference _craftAction;
 
-        private IBufferedPublisher<MoveInput> _movePublisher;
-        private IBufferedPublisher<SprintInput> _sprintPublisher;
-        private IBufferedPublisher<AimInput> _aimPublisher;
-        private IPublisher<JumpInput> _jumpPublisher;
-        private IPublisher<CrouchInput> _crouchPublisher;
-        private IPublisher<InteractInput> _interactPublisher;
-        private IPublisher<HeavyInteractInput> _heavyInteractPublisher;
-        private IPublisher<CraftInput> _craftPublisher;
         private InputAction _runtimeCraftAction;
         private Vector2 _actionMoveInput;
         private Vector2 _externalMoveInput;
@@ -155,35 +142,62 @@ namespace ProjectResonance.PlayerInput
         private bool _isExternalMoveInputActive;
         private bool _isExternalAimInputActive;
 
-        private bool _dependenciesInjected;
         private bool _isInitialized;
 
-        [Inject]
-        private void Construct(
-            IBufferedPublisher<MoveInput> movePublisher,
-            IBufferedPublisher<SprintInput> sprintPublisher,
-            IBufferedPublisher<AimInput> aimPublisher,
-            IPublisher<JumpInput> jumpPublisher,
-            IPublisher<CrouchInput> crouchPublisher,
-            IPublisher<InteractInput> interactPublisher,
-            IPublisher<HeavyInteractInput> heavyInteractPublisher,
-            IPublisher<CraftInput> craftPublisher)
-        {
-            _movePublisher = movePublisher;
-            _sprintPublisher = sprintPublisher;
-            _aimPublisher = aimPublisher;
-            _jumpPublisher = jumpPublisher;
-            _crouchPublisher = crouchPublisher;
-            _interactPublisher = interactPublisher;
-            _heavyInteractPublisher = heavyInteractPublisher;
-            _craftPublisher = craftPublisher;
-            _dependenciesInjected = true;
+        /// <summary>
+        /// Gets the latest resolved movement input.
+        /// </summary>
+        public Vector2 CurrentMoveInput { get; private set; }
 
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Construct completed. Dependencies injected.", this);
-            }
-        }
+        /// <summary>
+        /// Gets the latest resolved aim input.
+        /// </summary>
+        public Vector2 CurrentAimInput { get; private set; }
+
+        /// <summary>
+        /// Gets whether sprint is currently held.
+        /// </summary>
+        public bool IsSprintPressed { get; private set; }
+
+        /// <summary>
+        /// Raised when movement input changes.
+        /// </summary>
+        public event Action<MoveInput> MoveInputChanged;
+
+        /// <summary>
+        /// Raised when sprint input changes.
+        /// </summary>
+        public event Action<SprintInput> SprintInputChanged;
+
+        /// <summary>
+        /// Raised when aim input changes.
+        /// </summary>
+        public event Action<AimInput> AimInputChanged;
+
+        /// <summary>
+        /// Raised when jump is requested.
+        /// </summary>
+        public event Action<JumpInput> JumpPerformed;
+
+        /// <summary>
+        /// Raised when crouch is requested.
+        /// </summary>
+        public event Action<CrouchInput> CrouchPerformed;
+
+        /// <summary>
+        /// Raised when interact is requested.
+        /// </summary>
+        public event Action<InteractInput> InteractPerformed;
+
+        /// <summary>
+        /// Raised when heavy interact is requested.
+        /// </summary>
+        public event Action<HeavyInteractInput> HeavyInteractPerformed;
+
+        /// <summary>
+        /// Raised when craft is requested.
+        /// </summary>
+        public event Action<CraftInput> CraftPerformed;
 
         /// <summary>
         /// Enables actions and starts publishing player input.
@@ -197,19 +211,6 @@ namespace ProjectResonance.PlayerInput
 
             _isInitialized = true;
 
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Initialize started.", this);
-            }
-
-            LogActionState("Move", _moveAction);
-            LogActionState("Sprint", _sprintAction);
-            LogActionState("Jump", _jumpAction);
-            LogActionState("Crouch", _crouchAction);
-            LogActionState("Interact", _interactAction);
-            LogActionState("HeavyInteract", _heavyInteractAction);
-            LogActionState("Craft", ResolveCraftAction());
-
             BindContinuousAction(_moveAction, OnMovePerformed, OnMoveCanceled);
             BindButtonAction(_sprintAction, OnSprintPerformed, OnSprintCanceled);
             BindButtonAction(_jumpAction, OnJumpPerformed, null);
@@ -222,36 +223,12 @@ namespace ProjectResonance.PlayerInput
             PublishResolvedMoveInput(force: true);
             PublishResolvedSprintInput(force: true);
             PublishResolvedAimInput(force: true);
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Initialize finished. Waiting for input...", this);
-            }
-        }
-
-        private void Awake()
-        {
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Awake fired.", this);
-            }
         }
 
         private void Start()
         {
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerInputHandler] Start fired. DependenciesInjected={_dependenciesInjected}, IsInitialized={_isInitialized}", this);
-            }
-
             if (_isInitialized)
             {
-                return;
-            }
-
-            if (!_dependenciesInjected)
-            {
-                Debug.LogError("[PlayerInputHandler] Start reached before DI injection. Check PlayerInstaller / LifetimeScope.", this);
                 return;
             }
 
@@ -320,7 +297,7 @@ namespace ProjectResonance.PlayerInput
         /// </summary>
         public void TriggerExternalJump()
         {
-            _jumpPublisher.Publish(new JumpInput());
+            JumpPerformed?.Invoke(new JumpInput());
         }
 
         /// <summary>
@@ -328,7 +305,7 @@ namespace ProjectResonance.PlayerInput
         /// </summary>
         public void TriggerExternalCrouch()
         {
-            _crouchPublisher.Publish(new CrouchInput());
+            CrouchPerformed?.Invoke(new CrouchInput());
         }
 
         /// <summary>
@@ -336,7 +313,7 @@ namespace ProjectResonance.PlayerInput
         /// </summary>
         public void TriggerExternalInteract()
         {
-            _interactPublisher.Publish(new InteractInput());
+            InteractPerformed?.Invoke(new InteractInput());
         }
 
         /// <summary>
@@ -344,7 +321,7 @@ namespace ProjectResonance.PlayerInput
         /// </summary>
         public void TriggerExternalHeavyInteract()
         {
-            _heavyInteractPublisher.Publish(new HeavyInteractInput());
+            HeavyInteractPerformed?.Invoke(new HeavyInteractInput());
         }
 
         /// <summary>
@@ -352,7 +329,7 @@ namespace ProjectResonance.PlayerInput
         /// </summary>
         public void TriggerExternalCraft()
         {
-            _craftPublisher.Publish(new CraftInput());
+            CraftPerformed?.Invoke(new CraftInput());
         }
 
         private void BindContinuousAction(
@@ -368,11 +345,6 @@ namespace ProjectResonance.PlayerInput
             actionReference.action.performed += onPerformed;
             actionReference.action.canceled += onCanceled;
             actionReference.action.Enable();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerInputHandler] Enabled continuous action: {actionReference.action.name}", this);
-            }
         }
 
         private void BindButtonAction(
@@ -392,11 +364,6 @@ namespace ProjectResonance.PlayerInput
             }
 
             actionReference.action.Enable();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerInputHandler] Enabled button action: {actionReference.action.name}", this);
-            }
         }
 
         private void BindButtonAction(
@@ -416,53 +383,6 @@ namespace ProjectResonance.PlayerInput
             }
 
             action.Enable();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerInputHandler] Enabled button action: {action.name}", this);
-            }
-        }
-
-        private void LogActionState(string actionLabel, InputActionReference actionReference)
-        {
-            if (!_enableDebugLogs)
-            {
-                return;
-            }
-
-            if (actionReference == null)
-            {
-                Debug.LogError($"[PlayerInputHandler] {actionLabel} action reference is NULL.", this);
-                return;
-            }
-
-            if (actionReference.action == null)
-            {
-                Debug.LogError($"[PlayerInputHandler] {actionLabel} action is NULL inside InputActionReference.", this);
-                return;
-            }
-
-            Debug.Log(
-                $"[PlayerInputHandler] {actionLabel} action ready. Name={actionReference.action.name}, Map={actionReference.action.actionMap?.name}",
-                this);
-        }
-
-        private void LogActionState(string actionLabel, InputAction action)
-        {
-            if (!_enableDebugLogs)
-            {
-                return;
-            }
-
-            if (action == null)
-            {
-                Debug.LogError($"[PlayerInputHandler] {actionLabel} runtime action is NULL.", this);
-                return;
-            }
-
-            Debug.Log(
-                $"[PlayerInputHandler] {actionLabel} action ready. Name={action.name}, Map={action.actionMap?.name}",
-                this);
         }
 
         private void DisposeBindings()
@@ -540,94 +460,49 @@ namespace ProjectResonance.PlayerInput
             var value = Vector2.ClampMagnitude(context.ReadValue<Vector2>(), 1f);
             _actionMoveInput = value;
             PublishResolvedMoveInput();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerInputHandler] Move performed: {value}", this);
-            }
         }
 
         private void OnMoveCanceled(InputAction.CallbackContext context)
         {
             _actionMoveInput = Vector2.zero;
             PublishResolvedMoveInput();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Move canceled: (0,0)", this);
-            }
         }
 
         private void OnSprintPerformed(InputAction.CallbackContext context)
         {
             _actionSprintPressed = true;
             PublishResolvedSprintInput();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Sprint performed.", this);
-            }
         }
 
         private void OnSprintCanceled(InputAction.CallbackContext context)
         {
             _actionSprintPressed = false;
             PublishResolvedSprintInput();
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Sprint canceled.", this);
-            }
         }
 
         private void OnJumpPerformed(InputAction.CallbackContext context)
         {
-            _jumpPublisher.Publish(new JumpInput());
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Jump performed.", this);
-            }
+            JumpPerformed?.Invoke(new JumpInput());
         }
 
         private void OnCrouchPerformed(InputAction.CallbackContext context)
         {
-            _crouchPublisher.Publish(new CrouchInput());
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Crouch performed.", this);
-            }
+            CrouchPerformed?.Invoke(new CrouchInput());
         }
 
         private void OnInteractPerformed(InputAction.CallbackContext context)
         {
-            _interactPublisher.Publish(new InteractInput());
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Interact performed.", this);
-            }
+            InteractPerformed?.Invoke(new InteractInput());
         }
 
         private void OnHeavyInteractPerformed(InputAction.CallbackContext context)
         {
-            _heavyInteractPublisher.Publish(new HeavyInteractInput());
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] HeavyInteract performed.", this);
-            }
+            HeavyInteractPerformed?.Invoke(new HeavyInteractInput());
         }
 
         private void OnCraftPerformed(InputAction.CallbackContext context)
         {
-            _craftPublisher.Publish(new CraftInput());
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log("[PlayerInputHandler] Craft performed.", this);
-            }
+            CraftPerformed?.Invoke(new CraftInput());
         }
 
         private InputAction ResolveCraftAction(bool createIfMissing = true)
@@ -660,7 +535,8 @@ namespace ProjectResonance.PlayerInput
             }
 
             _lastPublishedMoveInput = resolvedInput;
-            _movePublisher.Publish(new MoveInput(resolvedInput));
+            CurrentMoveInput = resolvedInput;
+            MoveInputChanged?.Invoke(new MoveInput(resolvedInput));
         }
 
         private Vector2 ResolveMoveInput()
@@ -678,7 +554,8 @@ namespace ProjectResonance.PlayerInput
             }
 
             _lastPublishedAimInput = resolvedInput;
-            _aimPublisher.Publish(new AimInput(resolvedInput));
+            CurrentAimInput = resolvedInput;
+            AimInputChanged?.Invoke(new AimInput(resolvedInput));
         }
 
         private Vector2 ResolveAimInput()
@@ -700,7 +577,8 @@ namespace ProjectResonance.PlayerInput
             }
 
             _lastPublishedSprintPressed = resolvedSprintState;
-            _sprintPublisher.Publish(new SprintInput(resolvedSprintState));
+            IsSprintPressed = resolvedSprintState;
+            SprintInputChanged?.Invoke(new SprintInput(resolvedSprintState));
         }
     }
 }

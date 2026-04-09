@@ -1,6 +1,6 @@
 // Path: Assets/Project/Scripts/Player/AimTargetable.cs
 // Purpose: Marks a world object as selectable by the player's right-stick aim targeting system.
-// Dependencies: System, UnityEngine, ProjectResonance.PlayerCombat, ProjectResonance.PlayerInstaller.
+// Dependencies: System, UnityEngine, ProjectResonance.PlayerCombat.
 
 using System;
 using UnityEngine;
@@ -22,13 +22,13 @@ namespace ProjectResonance.PlayerCombat
         private Transform _targetAnchor;
 
         [SerializeField]
+        private Transform _distanceReference;
+
+        [SerializeField]
         private MonoBehaviour _hitReceiverSource;
 
         [SerializeField]
         private Renderer[] _feedbackRenderers;
-
-        [SerializeField]
-        private bool _drawDebugGizmos = true;
 
         private FeedbackRendererState[] _feedbackStates = Array.Empty<FeedbackRendererState>();
         private bool _feedbackInitialized;
@@ -36,7 +36,6 @@ namespace ProjectResonance.PlayerCombat
         private float _activeFlashDuration = 1f;
         private float _activeFlashStrength = 0.85f;
         private float _flashTimeRemaining;
-        private ProjectResonance.PlayerInstaller.PlayerInstaller _playerInstaller;
 
         private struct FeedbackMaterialState
         {
@@ -61,6 +60,11 @@ namespace ProjectResonance.PlayerCombat
         public Transform TargetAnchor => _targetAnchor != null ? _targetAnchor : transform;
 
         /// <summary>
+        /// Gets the transform used to resolve interaction distance for this target.
+        /// </summary>
+        public Transform DistanceReference => ResolveDistanceReference();
+
+        /// <summary>
         /// Resolves the world-space anchor position used while selecting this target.
         /// </summary>
         /// <param name="heightBias">Vertical offset applied to the authored anchor.</param>
@@ -77,6 +81,28 @@ namespace ProjectResonance.PlayerCombat
             }
 
             return anchorPosition;
+        }
+
+        /// <summary>
+        /// Resolves the world-space position used for distance checks and hit reach validation.
+        /// </summary>
+        /// <param name="heightBias">Vertical offset applied when the reference falls back to this transform.</param>
+        /// <returns>Resolved world-space distance reference position.</returns>
+        public Vector3 ResolveDistanceReferencePosition(float heightBias)
+        {
+            var reference = ResolveDistanceReference();
+            if (reference == null)
+            {
+                return ResolveAnchorPosition(heightBias);
+            }
+
+            var referencePosition = reference.position;
+            if (reference == transform || reference == TargetAnchor)
+            {
+                referencePosition += new Vector3(0f, Mathf.Max(0f, heightBias), 0f);
+            }
+
+            return referencePosition;
         }
 
         /// <summary>
@@ -144,41 +170,11 @@ namespace ProjectResonance.PlayerCombat
             ApplyFlash(0f);
         }
 
-        private void OnDrawGizmos()
-        {
-            if (!_drawDebugGizmos || !Application.isPlaying)
-            {
-                return;
-            }
-
-            if (!TryResolveDebugPlayerOrigin(out var playerOrigin))
-            {
-                return;
-            }
-
-            if (!TryGetHitReceiver(out var receiver) || !receiver.CanReceiveHit)
-            {
-                return;
-            }
-
-            var anchorPosition = ResolveAnchorPosition(0f);
-            var planarOffset = anchorPosition - playerOrigin;
-            planarOffset.y = 0f;
-            var debugHitRadius = ResolveDebugHitRadius();
-            if (planarOffset.sqrMagnitude > debugHitRadius * debugHitRadius)
-            {
-                return;
-            }
-
-            Gizmos.color = new Color(0.3f, 1f, 0.4f, 0.9f);
-            Gizmos.DrawLine(playerOrigin, anchorPosition);
-            Gizmos.DrawSphere(anchorPosition, 0.08f);
-        }
-
         private void Reset()
         {
             _targetAnchor = transform;
             AutoAssignReceiver();
+            AutoAssignDistanceReference();
             AutoAssignFeedbackRenderers();
         }
 
@@ -190,6 +186,7 @@ namespace ProjectResonance.PlayerCombat
             }
 
             AutoAssignReceiver();
+            AutoAssignDistanceReference();
             AutoAssignFeedbackRenderers();
             _feedbackInitialized = false;
         }
@@ -201,15 +198,20 @@ namespace ProjectResonance.PlayerCombat
                 return;
             }
 
-            var behaviours = GetComponents<MonoBehaviour>();
-            for (var index = 0; index < behaviours.Length; index++)
+            _hitReceiverSource = FindHitReceiverSource();
+        }
+
+        private void AutoAssignDistanceReference()
+        {
+            if (_distanceReference != null)
             {
-                var behaviour = behaviours[index];
-                if (behaviour is IPlayerHitReceiver)
-                {
-                    _hitReceiverSource = behaviour;
-                    return;
-                }
+                return;
+            }
+
+            var receiverTransform = ResolveHitReceiverTransform();
+            if (receiverTransform != null)
+            {
+                _distanceReference = receiverTransform;
             }
         }
 
@@ -364,39 +366,57 @@ namespace ProjectResonance.PlayerCombat
             }
         }
 
-        private bool TryResolveDebugPlayerOrigin(out Vector3 playerOrigin)
+        private MonoBehaviour FindHitReceiverSource()
         {
-            var characterController = FindFirstObjectByType<CharacterController>();
-            if (characterController != null)
+            var localBehaviours = GetComponents<MonoBehaviour>();
+            for (var index = 0; index < localBehaviours.Length; index++)
             {
-                playerOrigin = characterController.transform.position;
-                return true;
+                if (localBehaviours[index] is IPlayerHitReceiver)
+                {
+                    return localBehaviours[index];
+                }
             }
 
-            var playerObject = GameObject.FindGameObjectWithTag("Player");
-            if (playerObject != null)
+            var parentBehaviours = GetComponentsInParent<MonoBehaviour>(true);
+            for (var index = 0; index < parentBehaviours.Length; index++)
             {
-                playerOrigin = playerObject.transform.position;
-                return true;
+                if (parentBehaviours[index] is IPlayerHitReceiver)
+                {
+                    return parentBehaviours[index];
+                }
             }
 
-            playerOrigin = Vector3.zero;
-            return false;
+            var childBehaviours = GetComponentsInChildren<MonoBehaviour>(true);
+            for (var index = 0; index < childBehaviours.Length; index++)
+            {
+                if (childBehaviours[index] is IPlayerHitReceiver)
+                {
+                    return childBehaviours[index];
+                }
+            }
+
+            return null;
         }
 
-        private float ResolveDebugHitRadius()
+        private Transform ResolveDistanceReference()
         {
-            if (_playerInstaller == null)
+            if (_distanceReference != null)
             {
-                _playerInstaller = FindFirstObjectByType<ProjectResonance.PlayerInstaller.PlayerInstaller>();
+                return _distanceReference;
             }
 
-            if (_playerInstaller != null && _playerInstaller.AimTargetingConfigAsset != null)
+            var receiverTransform = ResolveHitReceiverTransform();
+            return receiverTransform != null ? receiverTransform : TargetAnchor;
+        }
+
+        private Transform ResolveHitReceiverTransform()
+        {
+            if (_hitReceiverSource is Component component)
             {
-                return _playerInstaller.AimTargetingConfigAsset.MaxAimRadius;
+                return component.transform;
             }
 
-            return 3f;
+            return null;
         }
     }
 }

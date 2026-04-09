@@ -5,7 +5,6 @@
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using UnityEngine;
 using VContainer.Unity;
 
@@ -33,14 +32,9 @@ namespace ProjectResonance.Campfire
     public sealed class CampfireSystem : ICampfireService, IStartable, IDisposable
     {
         private readonly CampfireConfig _config;
-        private readonly CampfireState _state;
+        private readonly CampfireRuntimeState _state;
         private readonly CampfireAnchor _anchor;
         private readonly ICampfireWeatherService _weatherService;
-        private readonly IBufferedPublisher<FuelChangedEvent> _fuelChangedPublisher;
-        private readonly IPublisher<CampfireLitEvent> _campfireLitPublisher;
-        private readonly IPublisher<CampfireDyingEvent> _campfireDyingPublisher;
-        private readonly IPublisher<CampfireExtinguishedEvent> _campfireExtinguishedPublisher;
-        private readonly IPublisher<CampfireLevelUpEvent> _campfireLevelUpPublisher;
 
         private CancellationTokenSource _burnLoopCancellation;
         private CancellationTokenSource _extinguishWarningCancellation;
@@ -49,48 +43,32 @@ namespace ProjectResonance.Campfire
         /// Creates the runtime campfire system.
         /// </summary>
         /// <param name="config">Campfire configuration asset.</param>
-        /// <param name="state">Shared runtime state asset.</param>
+        /// <param name="stateTemplate">Shared authored campfire state template asset.</param>
         /// <param name="anchor">Scene anchor for the campfire.</param>
-        /// <param name="fuelChangedPublisher">Buffered fuel publisher.</param>
-        /// <param name="campfireLitPublisher">Lit event publisher.</param>
-        /// <param name="campfireDyingPublisher">Dying event publisher.</param>
-        /// <param name="campfireExtinguishedPublisher">Extinguished event publisher.</param>
-        /// <param name="campfireLevelUpPublisher">Level-up event publisher.</param>
         /// <param name="weatherService">Optional weather service used to scale burn rate.</param>
         public CampfireSystem(
             CampfireConfig config,
-            CampfireState state,
+            CampfireState stateTemplate,
             CampfireAnchor anchor,
-            IBufferedPublisher<FuelChangedEvent> fuelChangedPublisher,
-            IPublisher<CampfireLitEvent> campfireLitPublisher,
-            IPublisher<CampfireDyingEvent> campfireDyingPublisher,
-            IPublisher<CampfireExtinguishedEvent> campfireExtinguishedPublisher,
-            IPublisher<CampfireLevelUpEvent> campfireLevelUpPublisher,
             ICampfireWeatherService weatherService = null)
         {
             _config = config;
-            _state = state;
+            _state = new CampfireRuntimeState(_config, stateTemplate);
             _anchor = anchor;
             _weatherService = weatherService;
-            _fuelChangedPublisher = fuelChangedPublisher;
-            _campfireLitPublisher = campfireLitPublisher;
-            _campfireDyingPublisher = campfireDyingPublisher;
-            _campfireExtinguishedPublisher = campfireExtinguishedPublisher;
-            _campfireLevelUpPublisher = campfireLevelUpPublisher;
-
-            _state.Initialize(
-                _config,
-                _fuelChangedPublisher,
-                _campfireLitPublisher,
-                _campfireDyingPublisher,
-                _campfireExtinguishedPublisher,
-                _campfireLevelUpPublisher);
         }
 
         /// <summary>
-        /// Gets the shared runtime state asset.
+        /// Gets the shared runtime state object.
         /// </summary>
-        public CampfireState State => _state;
+        public CampfireRuntimeState State => _state;
+
+        /// <inheritdoc />
+        public event Action<FuelChangedEvent> FuelChanged
+        {
+            add => _state.FuelChanged += value;
+            remove => _state.FuelChanged -= value;
+        }
 
         /// <summary>
         /// Gets whether the campfire is lit.

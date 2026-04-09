@@ -1,11 +1,10 @@
 // Path: Assets/Project/Scripts/ResourceNodes/PlayerResourceInteractor.cs
 // Purpose: Converts player interact inputs into generic resource interactions against the currently targeted node.
-// Dependencies: UniTask, MessagePipe, UnityEngine, PlayerInput, ProjectResonance.TreeFelling, ProjectResonance.ResourceNodes, VContainer.
+// Dependencies: UniTask, UnityEngine, PlayerInput, ProjectResonance.TreeFelling, ProjectResonance.ResourceNodes, VContainer.
 
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.MobileControls;
 using ProjectResonance.PlayerInput;
 using ProjectResonance.TreeFelling;
@@ -22,10 +21,6 @@ namespace ProjectResonance.ResourceNodes
     [DisallowMultipleComponent]
     public sealed class PlayerResourceInteractor : MonoBehaviour
     {
-        [Header("Debug")]
-        [SerializeField]
-        private bool _enableDebugLogs = false;
-
         [Header("References")]
         [SerializeField]
         private Transform _interactionOrigin;
@@ -36,22 +31,17 @@ namespace ProjectResonance.ResourceNodes
 
         private readonly List<MonoBehaviour> _componentBuffer = new List<MonoBehaviour>(8);
 
-        private ISubscriber<InteractInput> _interactSubscriber;
-        private ISubscriber<HeavyInteractInput> _heavyInteractSubscriber;
+        private PlayerInputHandler _playerInputHandler;
         private IMobileModeService _mobileModeService;
 
-        private IDisposable _interactSubscription;
-        private IDisposable _heavyInteractSubscription;
         private bool _isInitialized;
 
         [Inject]
         private void Construct(
-            ISubscriber<InteractInput> interactSubscriber,
-            ISubscriber<HeavyInteractInput> heavyInteractSubscriber,
+            PlayerInputHandler playerInputHandler,
             IMobileModeService mobileModeService)
         {
-            _interactSubscriber = interactSubscriber;
-            _heavyInteractSubscriber = heavyInteractSubscriber;
+            _playerInputHandler = playerInputHandler;
             _mobileModeService = mobileModeService;
         }
 
@@ -66,12 +56,10 @@ namespace ProjectResonance.ResourceNodes
             }
 
             _isInitialized = true;
-            _interactSubscription = _interactSubscriber.Subscribe(_ => HandleInteract(isHeavyInteraction: false));
-            _heavyInteractSubscription = _heavyInteractSubscriber.Subscribe(_ => HandleInteract(isHeavyInteraction: true));
-
-            if (_enableDebugLogs)
+            if (_playerInputHandler != null)
             {
-                Debug.Log($"[PlayerResourceInteractor] Initialized. TargetDetector={(_resourceTargetDetector != null ? _resourceTargetDetector.name : "null")}, Origin={(_interactionOrigin != null ? _interactionOrigin.name : "self")}", this);
+                _playerInputHandler.InteractPerformed += OnInteractPerformed;
+                _playerInputHandler.HeavyInteractPerformed += OnHeavyInteractPerformed;
             }
         }
 
@@ -80,11 +68,11 @@ namespace ProjectResonance.ResourceNodes
         /// </summary>
         public void Shutdown()
         {
-            _interactSubscription?.Dispose();
-            _interactSubscription = null;
-
-            _heavyInteractSubscription?.Dispose();
-            _heavyInteractSubscription = null;
+            if (_playerInputHandler != null)
+            {
+                _playerInputHandler.InteractPerformed -= OnInteractPerformed;
+                _playerInputHandler.HeavyInteractPerformed -= OnHeavyInteractPerformed;
+            }
 
             _isInitialized = false;
         }
@@ -100,6 +88,16 @@ namespace ProjectResonance.ResourceNodes
             _resourceTargetDetector = GetComponent<ResourceTargetDetector>();
         }
 
+        private void OnInteractPerformed(InteractInput _)
+        {
+            HandleInteract(isHeavyInteraction: false);
+        }
+
+        private void OnHeavyInteractPerformed(HeavyInteractInput _)
+        {
+            HandleInteract(isHeavyInteraction: true);
+        }
+
         private void HandleInteract(bool isHeavyInteraction)
         {
             if (_mobileModeService != null && _mobileModeService.IsMobileModeActive)
@@ -107,27 +105,12 @@ namespace ProjectResonance.ResourceNodes
                 return;
             }
 
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerResourceInteractor] Input received. Heavy={isHeavyInteraction}", this);
-            }
-
             if (!TryResolveInteractable(out var interactable))
             {
-                if (_enableDebugLogs)
-                {
-                    Debug.Log("[PlayerResourceInteractor] No interactable found from current resource target.", this);
-                }
-
                 return;
             }
 
             var context = new InteractionContext(_interactionOrigin != null ? _interactionOrigin : transform, ResolveOriginPosition());
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerResourceInteractor] Interactable found: {((MonoBehaviour)interactable).name}. Heavy={isHeavyInteraction}", (MonoBehaviour)interactable);
-            }
 
             if (isHeavyInteraction)
             {
@@ -144,28 +127,13 @@ namespace ProjectResonance.ResourceNodes
 
             if (_resourceTargetDetector == null)
             {
-                if (_enableDebugLogs)
-                {
-                    Debug.LogWarning("[PlayerResourceInteractor] ResourceTargetDetector is not assigned.", this);
-                }
-
                 return false;
             }
 
             var currentNode = _resourceTargetDetector.CurrentTarget;
             if (currentNode == null)
             {
-                if (_enableDebugLogs)
-                {
-                    Debug.Log("[PlayerResourceInteractor] ResourceTargetDetector has no current target.", this);
-                }
-
                 return false;
-            }
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerResourceInteractor] Current target resolved: {currentNode.name}", currentNode);
             }
 
             _componentBuffer.Clear();
@@ -179,11 +147,6 @@ namespace ProjectResonance.ResourceNodes
                     _componentBuffer.Clear();
                     return true;
                 }
-            }
-
-            if (_enableDebugLogs)
-            {
-                Debug.Log($"[PlayerResourceInteractor] Current target {currentNode.name}, but no IInteractable component was found on it.", currentNode);
             }
 
             _componentBuffer.Clear();

@@ -1,10 +1,9 @@
 // Path: Assets/Project/Scpripts/Campfire/CampfireLifetimeScope.cs
-// Purpose: Registers the full campfire module in VContainer and wires MessagePipe brokers for campfire gameplay.
-// Dependencies: MessagePipe, VContainer, UnityEngine, Campfire, Common.Random, DayNight, Ghosts.
+// Purpose: Registers the full campfire module and its runtime services.
+// Dependencies: VContainer, UnityEngine, Campfire, Common.Random, DayNight, Ghosts.
 
 using System;
 using Cysharp.Threading.Tasks;
-using MessagePipe;
 using ProjectResonance.Common.Random;
 using ProjectResonance.DayNight;
 using ProjectResonance.Ghosts;
@@ -22,11 +21,6 @@ namespace ProjectResonance.Campfire
     [DisallowMultipleComponent]
     public sealed class CampfireLifetimeScope : LifetimeScope
     {
-        private static readonly ICampfireWeatherService NullWeatherService = new NullCampfireWeatherService();
-        private static readonly IRespawnService NullRespawnServiceInstance = new NullRespawnService();
-        private static readonly ICampfireMenuPresenter NullMenuPresenterInstance = new NullCampfireMenuPresenter();
-        private static readonly NullCampfireInventoryBridge NullInventoryBridgeInstance = new NullCampfireInventoryBridge();
-
         [Header("Config")]
         [SerializeField]
         private CampfireConfig _campfireConfig;
@@ -69,6 +63,11 @@ namespace ProjectResonance.Campfire
         /// <param name="builder">Current container builder.</param>
         protected override void Configure(IContainerBuilder builder)
         {
+            var nullWeatherService = new NullCampfireWeatherService();
+            var nullRespawnService = new NullRespawnService();
+            var nullMenuPresenter = new NullCampfireMenuPresenter();
+            var nullInventoryBridge = new NullCampfireInventoryBridge();
+
             builder.RegisterInstance(_campfireConfig);
             builder.RegisterInstance(_campfireState);
 
@@ -103,7 +102,7 @@ namespace ProjectResonance.Campfire
             }
             else
             {
-                builder.RegisterInstance<ICampfireWeatherService>(NullWeatherService);
+                builder.RegisterInstance<ICampfireWeatherService>(nullWeatherService);
             }
 
             if (_respawnServiceSource is IRespawnService respawnService)
@@ -112,7 +111,7 @@ namespace ProjectResonance.Campfire
             }
             else
             {
-                builder.RegisterInstance(NullRespawnServiceInstance);
+                builder.RegisterInstance<IRespawnService>(nullRespawnService);
             }
 
             if (_menuPresenterSource is ICampfireMenuPresenter menuPresenter)
@@ -121,7 +120,7 @@ namespace ProjectResonance.Campfire
             }
             else
             {
-                builder.RegisterInstance(NullMenuPresenterInstance);
+                builder.RegisterInstance<ICampfireMenuPresenter>(nullMenuPresenter);
             }
 
             if (_inventoryBridgeSource is IInventoryQuery inventoryQuery)
@@ -130,7 +129,7 @@ namespace ProjectResonance.Campfire
             }
             else
             {
-                builder.RegisterInstance<IInventoryQuery>(NullInventoryBridgeInstance);
+                builder.RegisterInstance<IInventoryQuery>(nullInventoryBridge);
             }
 
             if (_inventoryBridgeSource is IInventoryWriteService inventoryWriteService)
@@ -139,19 +138,15 @@ namespace ProjectResonance.Campfire
             }
             else
             {
-                builder.RegisterInstance<IInventoryWriteService>(NullInventoryBridgeInstance);
+                builder.RegisterInstance<IInventoryWriteService>(nullInventoryBridge);
             }
 
             builder.Register<IRandomProvider, UnityRandomProvider>(Lifetime.Singleton);
 
-            RegisterMessagePipe(builder);
-
-            builder.UseEntryPoints(entryPoints =>
-            {
-                entryPoints.Add<CampfireSystem>();
-                entryPoints.Add<TemperatureSystem>();
-                entryPoints.Add<GhostSpawnSystem>();
-            });
+            EntryPointsBuilder.EnsureDispatcherRegistered(builder);
+            builder.Register<CampfireSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+            builder.Register<TemperatureSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
+            builder.Register<GhostSpawnSystem>(Lifetime.Singleton).AsSelf().AsImplementedInterfaces();
 
             builder.RegisterBuildCallback(container =>
             {
@@ -185,41 +180,6 @@ namespace ProjectResonance.Campfire
                     container.InjectGameObject(_campfireInteraction.gameObject);
                 }
             });
-        }
-
-        private void RegisterMessagePipe(IContainerBuilder builder)
-        {
-            var messagePipeBuilder = new BuiltinContainerBuilder();
-            messagePipeBuilder.AddMessagePipe();
-            messagePipeBuilder.AddMessageBroker<CampfireLitEvent>();
-            messagePipeBuilder.AddMessageBroker<CampfireDyingEvent>();
-            messagePipeBuilder.AddMessageBroker<CampfireExtinguishedEvent>();
-            messagePipeBuilder.AddMessageBroker<CampfireLevelUpEvent>();
-            messagePipeBuilder.AddMessageBroker<GhostInLightEvent>();
-            messagePipeBuilder.AddMessageBroker<SleepRequestEvent>();
-
-            var serviceProvider = messagePipeBuilder.BuildServiceProvider();
-
-            RegisterMessage<CampfireLitEvent>(builder, serviceProvider);
-            RegisterMessage<CampfireDyingEvent>(builder, serviceProvider);
-            RegisterMessage<CampfireExtinguishedEvent>(builder, serviceProvider);
-            RegisterMessage<CampfireLevelUpEvent>(builder, serviceProvider);
-            RegisterMessage<GhostInLightEvent>(builder, serviceProvider);
-            RegisterMessage<SleepRequestEvent>(builder, serviceProvider);
-        }
-
-        private void RegisterMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)
-        {
-            builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
-            builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
-        }
-
-        private void RegisterBufferedMessage<TMessage>(IContainerBuilder builder, IServiceProvider serviceProvider)
-        {
-            builder.RegisterInstance((IPublisher<TMessage>)serviceProvider.GetService(typeof(IPublisher<TMessage>)));
-            builder.RegisterInstance((ISubscriber<TMessage>)serviceProvider.GetService(typeof(ISubscriber<TMessage>)));
-            builder.RegisterInstance((IBufferedPublisher<TMessage>)serviceProvider.GetService(typeof(IBufferedPublisher<TMessage>)));
-            builder.RegisterInstance((IBufferedSubscriber<TMessage>)serviceProvider.GetService(typeof(IBufferedSubscriber<TMessage>)));
         }
 
         private sealed class NullCampfireWeatherService : ICampfireWeatherService
